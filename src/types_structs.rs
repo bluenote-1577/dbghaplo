@@ -1,4 +1,5 @@
 use ordered_float::*;
+use std::rc::Rc;
 use derivative::Derivative;
 use debruijn::dna_string::DnaString;
 use crate::utils_frags;
@@ -6,15 +7,14 @@ use fxhash::{FxHashMap, FxHashSet};
 use rust_htslib::bam::Record;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
-use std::rc::Rc;
 
 pub type GnPosition = usize;
 pub type SnpPosition = u32;
 pub type Genotype = u8;
 pub type GenotypeCount = OrderedFloat<f64>;
 pub type Haplotype = FxHashMap<SnpPosition, FxHashMap<Genotype, GenotypeCount>>;
+pub type VarMer = Vec<(SnpPosition, Genotype)>;
 pub static GAP_CHAR: Genotype = 9;
-
 pub type FlowUpVec = Vec<((usize, usize), (usize, usize), f64)>;
 
 #[derive(Debug, Clone, Derivative)]
@@ -80,8 +80,21 @@ pub struct Frag {
     pub snp_pos_to_seq_pos: FxHashMap<SnpPosition, (u8, GnPosition)>,
     pub first_pos_base: GnPosition,
     pub last_pos_base: GnPosition
-
     
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct FragDBG {
+    pub id: String,
+    pub counter_id: usize,
+    pub seq: Vec<(SnpPosition, Genotype)>,
+    pub seq_dict: FxHashMap<SnpPosition, Genotype>,
+    pub seq_string: Vec<DnaString>,
+    pub first_position: SnpPosition,
+    pub last_position: SnpPosition,
+    pub snp_pos_to_seq_pos: FxHashMap<SnpPosition, (u8, GnPosition)>,
+    pub first_pos_base: GnPosition,
+    pub last_pos_base: GnPosition
 }
 
 impl Ord for Frag{
@@ -322,6 +335,7 @@ pub fn update_frag(
         frag.last_position = snp_pos
     }
 }
+
 
 #[inline]
 pub fn build_truncated_hap_block(

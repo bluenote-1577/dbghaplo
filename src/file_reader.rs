@@ -245,6 +245,7 @@ pub fn get_vcf_profile<'a>(vcf_file: &str, ref_chroms: &'a Vec<String>) -> VcfPr
     }
 
     let vcf_header = vcf.header().clone();
+    let mut curr_pos = 0;
 
     let mut last_ref_chrom = &String::default();
     for rec in vcf.records() {
@@ -266,6 +267,7 @@ pub fn get_vcf_profile<'a>(vcf_file: &str, ref_chroms: &'a Vec<String>) -> VcfPr
         if last_ref_chrom != contig_name {
             snp_counter = 1;
             last_ref_chrom = contig_name;
+            curr_pos = 0;
         }
         let pos_allele_map = vcf_pos_allele_map
             .entry(contig_name.as_str())
@@ -288,6 +290,12 @@ pub fn get_vcf_profile<'a>(vcf_file: &str, ref_chroms: &'a Vec<String>) -> VcfPr
         if !is_snp {
             continue;
         }
+
+        if curr_pos != 0 && unr.pos() - curr_pos  < 1 {
+            debug!("VCF : Variant at position {} is too close to previous variant. Ignoring.", unr.pos());
+            continue;
+        }
+        curr_pos = unr.pos();
 
         snp_pos_to_gn_pos_map.insert(snp_counter, unr.pos() as GnPosition);
         pos_to_snp_counter_map.insert(unr.pos() as GnPosition, snp_counter);
@@ -407,7 +415,7 @@ pub fn get_frags_from_bamvcf_rewrite(
                             frag_from_record(&record, snp_positions_contig, pos_allele_map, count);
 
 //                        if frag.seq_dict.keys().len() > 0 {
-                        if !chrom_seqs.is_none() {
+                        if !chrom_seqs.is_none(){
                             alignment::realign(
                                 &seq,
                                 &mut frag,
@@ -549,7 +557,8 @@ fn combine_frags(
                 .snp_pos_to_seq_pos
                 .extend(sec_frag.snp_pos_to_seq_pos);
             ref_frags.push(first_frag);
-        } else if frags.len() == 1 && frags[0].0 & supplementary_mask == 0 {
+        //} else if frags.len() == 1 && frags[0].0 & supplementary_mask == 0 {
+        } else if frags.len() == 1 {
             ref_frags.push(std::mem::take(&mut frags[0].1));
         } else {
             //Arbitrary cutoff for reference suppl. alignment distance

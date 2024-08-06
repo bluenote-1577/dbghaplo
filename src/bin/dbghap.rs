@@ -1,15 +1,17 @@
 extern crate time;
 use clap::{AppSettings, Arg, Command};
-use floria::file_reader;
-use floria::file_writer;
-use floria::graph_processing;
-use floria::parse_cmd_line;
-use floria::part_block_manip;
-use floria::solve_flow;
-use floria::utils_frags;
+use dbghap::file_reader;
+use dbghap::dbg;
+use dbghap::file_writer;
+use dbghap::graph_processing;
+use dbghap::parse_cmd_line;
+use dbghap::part_block_manip;
+use dbghap::solve_flow;
+use dbghap::utils_frags;
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
+use dbghap::types_structs::*;
 
 //This makes statically compiled musl library
 //much much faster. Set to default for x86 systems...
@@ -23,10 +25,10 @@ fn main() {
     let output_options = "OUTPUT";
     let alg_options = "ALGORITHM";
     let mandatory_options = "REQUIRED";
-    let matches = Command::new("floria")
+    let matches = Command::new("dbghap")
                           .version("0.0.1")
                           .setting(AppSettings::ArgRequiredElseHelp)
-                          .about("floria - strain phasing for short or long-read shotgun metagenomic sequencing.\n\nExample usage :\nfloria -b bamfile.bam -v vcffile.vcf -r reference.fa -o results -t 10\n")
+                          .about("dbghap - strain phasing for short or long-read shotgun metagenomic sequencing.\n\nExample usage :\ndbghap -b bamfile.bam -v vcffile.vcf -r reference.fa -o results -t 10\n")
                           .arg(Arg::new("bam")
                               .short('b')
                               .value_name("BAM FILE")
@@ -64,7 +66,7 @@ fn main() {
                           .arg(Arg::new("output dir")
                               .short('o')
                               .long("output-dir")
-                              .help("Output folder. (default: floria_out_dir)")
+                              .help("Output folder. (default: dbghap_out_dir)")
                               .value_name("STRING")
                               .takes_value(true)
                               .help_heading(output_options))
@@ -188,7 +190,7 @@ fn main() {
                               .long("mapq-cutoff")
                               .takes_value(true)
                               .value_name("INT")
-                              .help("Primary MAPQ cutoff. (default: 15)")
+                              .help("Primary MAPQ cutoff. (default: 5)")
                               .help_heading(alg_options))
                             .arg(Arg::new("supp_aln_dist_cutoff")
                               .long("supp-aln-dist-cutoff")
@@ -223,10 +225,16 @@ fn main() {
         chrom_seqs = Some(file_reader::get_fasta_seqs(&options.reference_fasta));
         log::debug!("Read reference fasta successfully.");
     }
-    log::info!("Finished preprocessing in {:?}", Instant::now() - start_t);
+    log::debug!("Finished preprocessing in {:?}", Instant::now() - start_t);
 
     let mut warn_first_length = true;
     for contig in contigs_to_phase.iter() {
+
+        if contig.contains("/") {
+            log::warn!("Contig {} record ID contains '/'. Floria can not operate with record ids containing a backslash. Skipping.", contig);
+            continue;
+        }
+
         if !options.list_to_phase.contains(&contig.to_string()) && !options.list_to_phase.is_empty()
         {
             continue;
@@ -298,93 +306,28 @@ fn main() {
 
             //Do hybrid error correction
             let mut final_frags;
-            let mut short_frags = vec![];
-            if options.hybrid {
-                let ff_sf = utils_frags::hybrid_correction(all_frags);
-                final_frags = ff_sf.0;
-                short_frags = ff_sf.1;
-                //                final_frags.sort_by(|a, b| a.first_position.cmp(&b.first_position));
-                final_frags.sort();
-                for (i, frag) in final_frags.iter_mut().enumerate() {
-                    frag.counter_id = i;
-                }
-            } else {
-                final_frags = all_frags;
-            }
+            final_frags = all_frags;
+            let dbg_frags : Vec<FragDBG> = final_frags.iter().map(|x| dbg::frag_to_dbgfrag(x)).collect();
 
             if options.ignore_monomorphic {
                 final_frags = utils_frags::remove_monomorphic_allele(final_frags, options.epsilon);
             }
 
-            log::info!(
+            log::debug!(
                 "Reading inputs, realigning time taken {:?}",
                 Instant::now() - start_t
             );
 
+            let thirty = utils_frags::get_avg_length(&final_frags, 0.33);
             let avg_read_length = utils_frags::get_avg_length(&final_frags, 0.5);
-            log::debug!("Median number of SNPs in a read is {}", avg_read_length);
+            let ninety_read_length = utils_frags::get_avg_length(&final_frags, 0.50);
+            log::info!("Median number of SNPs in a read is {}", avg_read_length);
+            log::info!("90th perc. number of SNPs in a read is {}", ninety_read_length);
             log::debug!("Number of fragments {}", final_frags.len());
             log::debug!("Epsilon is {}", options.epsilon);
 
-            log::info!("Local phasing with {} threads...", options.num_threads);
-            let phasing_t = Instant::now();
-            let mut hap_graph = graph_processing::generate_hap_graph(
-                &final_frags,
-                &snp_to_genome_pos,
-                contig_out_dir.to_string(),
-                &options,
-            );
-            log::info!("Phasing time taken {:?}", Instant::now() - phasing_t);
-
-            log::info!("Solving flow problem...");
-            let highs_t = Instant::now();
-            let flow_up_vec = solve_flow::solve_lp_graph(&hap_graph);
-            log::info!("Flow solved in time {:?}", Instant::now() - highs_t);
-
-            //            let minilp_t = Instant::now();
-            //            let flow_up_vec =
-            //                solve_flow::solve_lp_graph_minilp(&hap_graph, contig_out_dir.to_string());
-            //            log::debug!("minilp time taken {:?}", Instant::now() - minilp_t);
-
-            let (all_path_parts, path_parts_snp_endpoints) =
-                graph_processing::get_disjoint_paths_rewrite(
-                    &mut hap_graph,
-                    flow_up_vec,
-                    contig_out_dir.to_string(),
-                    &vcf_profile,
-                    contig,
-                    &options,
-                );
-
-            let (sorted_path_parts, sorted_snp_endpoints) =
-                part_block_manip::process_reads_for_final_parts(
-                    all_path_parts,
-                    &short_frags,
-                    path_parts_snp_endpoints,
-                    &options,
-                    &snp_to_genome_pos,
-                );
-
-            //Scan over path_parts_snp_endpoints and only put in frags_without_snps that end there.
-            let snpless_frags_between_gaps = part_block_manip::get_frags_in_snpless_gaps(
-                &sorted_snp_endpoints,
-                &snp_to_genome_pos,
-                &frags_without_snps,
-                options.block_length,
-                &final_frags,
-            );
-
-            file_writer::write_outputs(
-                &sorted_path_parts,
-                &sorted_snp_endpoints,
-                contig_out_dir.to_string(),
-                &format!("{}", &contig),
-                &contig,
-                &snp_to_genome_pos,
-                &options,
-                &snpless_frags_between_gaps,
-                &mut chrom_seqs.as_mut().unwrap()
-            );
+            dbg::construct_dbg(&dbg_frags, thirty as usize, ninety_read_length as usize);
+            //dbg::construct_dbg(&dbg_frags, 8,8);
         }
     }
     log::info!("Total time taken is {:?}", Instant::now() - start_t_initial);

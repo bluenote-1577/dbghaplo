@@ -186,7 +186,7 @@ pub fn hap_block_from_partition(part: &Vec<FxHashSet<&Frag>>, use_qual: bool) ->
 pub fn get_avg_length(all_frags: &Vec<Frag>, quantile: f64) -> SnpPosition {
     let mut length_vec = Vec::new();
     for frag in all_frags.iter() {
-        length_vec.push(frag.last_position - frag.first_position);
+        length_vec.push(frag.seq_dict.len() as u32);
     }
     length_vec.sort();
     return length_vec[(length_vec.len() as f64 * quantile) as usize];

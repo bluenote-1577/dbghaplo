@@ -146,7 +146,7 @@ pub fn parse_cmd_line(matches : ArgMatches) -> Options{
     let snp_count_filter = matches.value_of("snp_count_filter").unwrap_or("100").parse::<usize>().unwrap();
     let use_qual_scores = matches.is_present("use_qual_scores");
     let output_reads = matches.is_present("output reads");
-    let mapq_cutoff = matches.value_of("mapq_cutoff").unwrap_or("15").parse::<u8>().unwrap();
+    let mapq_cutoff = matches.value_of("mapq_cutoff").unwrap_or("5").parse::<u8>().unwrap();
     
     
 

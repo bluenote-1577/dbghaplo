@@ -1,5 +1,5 @@
 [package]
-name = "floria"
+name = "dbghap"
 version = "0.0.1"
 authors = ["jim <jimshawster@gmail.com>"]
 edition = "2018"
@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 time = "=0.3"
 fxhash="0.2"
-statrs="0.16"
+statrs="0.17"
 rayon="1.7"
 rand="0.8"
 rand_core="0.6"

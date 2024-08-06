@@ -117,7 +117,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_derive",
- "statrs",
+ "statrs 0.16.0",
  "strum",
  "strum_macros 0.25.0",
  "thiserror",
@@ -389,6 +389,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef8ae57c4978a2acd8b869ce6b9ca1dfe817bff704c220209fdef2c0b75a01b9"
 
 [[package]]
+name = "dbghap"
+version = "0.0.1"
+dependencies = [
+ "assert_cmd",
+ "bio",
+ "bio-types 0.13.0",
+ "block-aligner",
+ "clap",
+ "debruijn",
+ "derivative",
+ "disjoint-sets",
+ "flate2",
+ "fxhash",
+ "highs",
+ "itertools 0.10.5",
+ "log",
+ "minilp",
+ "ordered-float 2.10.0",
+ "petgraph",
+ "predicates 1.0.8",
+ "rand",
+ "rand_core",
+ "rayon",
+ "rust-htslib",
+ "rust-lapper",
+ "simple_logger",
+ "statrs 0.17.1",
+ "tikv-jemallocator",
+ "time",
+]
+
+[[package]]
 name = "debruijn"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -512,38 +544,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1267f4ac4f343772758f7b1bdcbe767c218bbab93bb432acbf5162bbf85a6c4"
 dependencies = [
  "num-traits 0.2.15",
-]
-
-[[package]]
-name = "floria"
-version = "0.0.1"
-dependencies = [
- "assert_cmd",
- "bio",
- "bio-types 0.13.0",
- "block-aligner",
- "clap",
- "debruijn",
- "derivative",
- "disjoint-sets",
- "flate2",
- "fxhash",
- "highs",
- "itertools 0.10.5",
- "log",
- "minilp",
- "ordered-float 2.10.0",
- "petgraph",
- "predicates 1.0.8",
- "rand",
- "rand_core",
- "rayon",
- "rust-htslib",
- "rust-lapper",
- "simple_logger",
- "statrs",
- "tikv-jemallocator",
- "time",
 ]
 
 [[package]]
@@ -864,13 +864,31 @@ checksum = "d506eb7e08d6329505faa8a3a00a5dcc6de9f76e0c77e4b75763ae3c770831ff"
 dependencies = [
  "approx",
  "matrixmultiply 0.3.7",
- "nalgebra-macros",
+ "nalgebra-macros 0.1.0",
  "num-complex 0.4.3",
  "num-rational",
  "num-traits 0.2.15",
  "rand",
  "rand_distr",
- "simba",
+ "simba 0.6.0",
+ "typenum",
+]
+
+[[package]]
+name = "nalgebra"
+version = "0.32.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b5c17de023a86f59ed79891b2e5d5a94c705dbe904a5b5c9c952ea6221b03e4"
+dependencies = [
+ "approx",
+ "matrixmultiply 0.3.7",
+ "nalgebra-macros 0.2.2",
+ "num-complex 0.4.3",
+ "num-rational",
+ "num-traits 0.2.15",
+ "rand",
+ "rand_distr",
+ "simba 0.8.1",
  "typenum",
 ]
 
@@ -883,6 +901,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "nalgebra-macros"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "254a5372af8fc138e36684761d3c0cdb758a4410e938babcff1c860ce14ddbfc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.22",
 ]
 
 [[package]]
@@ -1392,6 +1421,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "simba"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "061507c94fc6ab4ba1c9a0305018408e312e17c041eb63bef8aa726fa33aceae"
+dependencies = [
+ "approx",
+ "num-complex 0.4.3",
+ "num-traits 0.2.15",
+ "paste",
+ "wide",
+]
+
+[[package]]
 name = "simple_logger"
 version = "4.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1428,7 +1470,19 @@ checksum = "2d08e5e1748192713cc281da8b16924fb46be7b0c2431854eadc785823e5696e"
 dependencies = [
  "approx",
  "lazy_static",
- "nalgebra",
+ "nalgebra 0.29.0",
+ "num-traits 0.2.15",
+ "rand",
+]
+
+[[package]]
+name = "statrs"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f697a07e4606a0a25c044de247e583a330dbb1731d11bc7350b81f48ad567255"
+dependencies = [
+ "approx",
+ "nalgebra 0.32.6",
  "num-traits 0.2.15",
  "rand",
 ]
