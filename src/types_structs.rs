@@ -1,5 +1,6 @@
 use ordered_float::*;
 use std::rc::Rc;
+use std::sync::Arc;
 use derivative::Derivative;
 use debruijn::dna_string::DnaString;
 use crate::utils_frags;
@@ -16,39 +17,6 @@ pub type Haplotype = FxHashMap<SnpPosition, FxHashMap<Genotype, GenotypeCount>>;
 pub type VarMer = Vec<(SnpPosition, Genotype)>;
 pub static GAP_CHAR: Genotype = 9;
 pub type FlowUpVec = Vec<((usize, usize), (usize, usize), f64)>;
-
-#[derive(Debug, Clone, Derivative)]
-#[derivative(Default)]
-pub struct Options{
-    pub bam_file: String,
-    pub vcf_file: String,
-    pub use_qual_scores: bool,
-    pub gzip: bool,
-    pub output_reads: bool,
-    pub mapq_cutoff: u8,
-    pub epsilon: f64,
-    pub dont_use_supp_aln: bool,
-    pub reassign_short: bool,
-    pub do_binning: bool,
-    pub max_number_solns: usize,
-    pub snp_density: f64,
-    pub max_ploidy: usize,
-    pub out_dir: String,
-    pub hybrid: bool,
-    pub list_to_phase: Vec<String>,
-    pub block_length: usize,
-    pub reference_fasta: String,
-    pub trim_reads: bool,
-    pub short_bam_file: String,
-    pub snp_count_filter: usize,
-    pub stopping_heuristic: bool,
-    pub ignore_monomorphic: bool,
-    pub num_threads: usize,
-    pub overwrite: bool,
-    pub ploidy_sensitivity: u8,
-    #[derivative(Default(value="40000"))]
-    pub supp_aln_dist_cutoff: i64
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct VcfProfile<'a> {
@@ -93,8 +61,7 @@ pub struct FragDBG {
     pub first_position: SnpPosition,
     pub last_position: SnpPosition,
     pub snp_pos_to_seq_pos: FxHashMap<SnpPosition, (u8, GnPosition)>,
-    pub first_pos_base: GnPosition,
-    pub last_pos_base: GnPosition
+    pub qual_dict: FxHashMap<SnpPosition, u8>,
 }
 
 impl Ord for Frag{
@@ -388,3 +355,90 @@ pub fn build_truncated_hap_block(
 
     return (blocks_broken, HapBlock { blocks: block_vec });
 }
+
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
+pub struct DBGInfo {
+    pub out_varmers: Vec<Arc<VarMer>>,
+    pub in_varmers: Vec<Arc<VarMer>>,
+    pub coverage: u64,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct VarmerPath {
+    pub first: u32,
+    pub last: u32,
+    pub varmers: Vec<DictFrag>,
+    pub total_avg_cov: u64,
+}
+
+pub struct VarmerPathInteger {
+    pub first: u32,
+    pub last: u32,
+    pub intver: VarMer,
+    pub total_avg_cov: u64,
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Hit<'a> {
+    pub varmer: &'a DictFrag,
+    pub same: FxHashSet<u32>,
+    pub r_to_a: FxHashSet<u32>,
+    pub a_to_r: FxHashSet<u32>,
+    pub del: FxHashSet<u32>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
+pub struct DictFrag {
+    pub seq: FxHashMap<u32, u8>,
+    pub seq_vec: VarMer,
+    pub first_position: u32,
+    pub last_position: u32,
+    pub cov: u64,
+}
+
+impl Hash for DictFrag {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.seq_vec.hash(state);
+    }
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AlignResult<'a> {
+    pub same: i32,
+    pub rtoa: i32,
+    pub ator: i32,
+    pub del: i32,
+    pub path: Vec<&'a VarMer>,
+    pub cov: Vec<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DpResult<'a> {
+    pub score: (f64, u64),
+    pub hits: &'a Vec<Hit<'a>>,
+    pub traceback: Vec<usize>,
+    pub max_index: usize,
+    pub dels_max: FxHashSet<u32>,
+    pub rtoa_max: FxHashSet<u32>,
+    pub ator_max: FxHashSet<u32>,
+    pub same_max: FxHashSet<u32>,
+    pub total_errs: usize,
+    pub total_matches: usize
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HapFinalResult<'a> {
+    pub relative_abundances: f64,
+    pub depth: f64,
+    pub assigned_frags: Vec<&'a FragDBG>,
+    pub path_frag: DictFrag,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConsensusResult{
+    pub haplotype: Haplotype,
+}
+
+

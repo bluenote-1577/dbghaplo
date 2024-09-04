@@ -1,4 +1,5 @@
 use crate::constants;
+use crate::types_structs::FragDBG;
 use crate::types_structs::Frag;
 use crate::types_structs::{Genotype, GenotypeCount, Haplotype, SnpPosition};
 use crate::types_structs::{HapBlock, GAP_CHAR};
@@ -157,6 +158,32 @@ pub fn check_overlap(r1: &Frag, r2: &Frag) -> bool {
     }
 }
 
+pub fn get_consensus_seq_dict(haplo: &Haplotype) -> FxHashMap<SnpPosition, Genotype> {
+    let mut consensus_seq_dict = FxHashMap::default();
+    for (pos, geno_dict) in haplo.iter() {
+        let consensus_var = geno_dict.iter().max_by_key(|entry| entry.1).unwrap().0;
+        consensus_seq_dict.insert(*pos, *consensus_var);
+    }
+    return consensus_seq_dict;
+}
+
+pub fn fragdbg_to_seq_dict(frag_set: &[&FragDBG], use_phred: bool) -> Haplotype {
+    let mut hap_map = FxHashMap::default();
+    for frag in frag_set.iter() {
+        for pos in frag.seq_dict.keys(){
+            let var_at_pos = frag.seq_dict.get(pos).unwrap();
+            let sites = hap_map.entry(*pos).or_insert(FxHashMap::default());
+            let site_counter = sites.entry(*var_at_pos).or_insert(OrderedFloat(0.));
+            if use_phred {
+                *site_counter += phred_scale_dbg(frag, pos);
+            } else {
+                *site_counter += 1.;
+            }
+        }
+    }
+    return hap_map;
+}
+
 pub fn set_to_seq_dict(frag_set: &FxHashSet<&Frag>, use_phred: bool) -> Haplotype {
     let mut hap_map = FxHashMap::default();
     for frag in frag_set.iter() {
@@ -182,6 +209,16 @@ pub fn hap_block_from_partition(part: &Vec<FxHashSet<&Frag>>, use_qual: bool) ->
     }
     HapBlock { blocks: block_vec }
 }
+
+pub fn get_avg_length_dbgf(all_frags: &Vec<FragDBG>, quantile: f64) -> usize{
+    let mut length_vec = Vec::new();
+    for frag in all_frags.iter() {
+        length_vec.push(frag.seq_dict.len() as u32);
+    }
+    length_vec.sort();
+    return length_vec[(length_vec.len() as f64 * quantile) as usize] as usize;
+}
+
 
 pub fn get_avg_length(all_frags: &Vec<Frag>, quantile: f64) -> SnpPosition {
     let mut length_vec = Vec::new();
@@ -660,13 +697,31 @@ pub fn distance_between_haplotypes(
     hap1: &Haplotype,
     hap2: &Haplotype,
     range: &(SnpPosition, SnpPosition),
+    reliability_cutoff: f64
 ) -> (f64, f64) {
     let cov_cutoff = constants::DIST_COV_CUTOFF;
     let mut same = 0.;
     let mut diff = 0.;
+    let ratioshap1 = hap1.iter().map(|(snp, genodict)| {
+        let total_cov = genodict.iter().map(|x| *x.1).sum::<GenotypeCount>();
+        let highest_cov = genodict.iter().map(|x| *x.1).max().unwrap();
+        let ratio = highest_cov / total_cov;
+        (snp, ratio)
+    }).collect::<FxHashMap<_, _>>();
+    let ratioshap2 = hap2.iter().map(|(snp, genodict)| {
+        let total_cov = genodict.iter().map(|x| *x.1).sum::<GenotypeCount>();
+        let highest_cov = genodict.iter().map(|x| *x.1).max().unwrap();
+        let ratio = highest_cov / total_cov;
+        (snp, ratio)
+    }).collect::<FxHashMap<_, _>>();
     for pos in hap1.keys() {
         let cov_pos_1 = hap1[pos].iter().map(|x| *x.1).sum::<GenotypeCount>();
         if hap2.contains_key(pos) {
+
+            if ratioshap1[pos].into_inner() < reliability_cutoff || ratioshap2[pos].into_inner() < reliability_cutoff {
+                continue;
+            }
+
             let cov_pos_2 = hap2[pos].iter().map(|x| *x.1).sum::<GenotypeCount>();
             if (cov_pos_1 > cov_cutoff && cov_pos_2 > cov_cutoff)
                 || *pos >= range.0 && *pos <= range.1
@@ -688,15 +743,27 @@ pub fn distance_between_haplotypes(
                     .0;
 
                 if consensus_var1 == consensus_var2 {
-                    same += 1.;
+                    //same += (((ratioshap1[pos] - 0.5) * (ratioshap2[pos] - 0.5))/(0.25)).into_inner();
+                    same += 1.
                 } else {
-                    diff += 1.;
+                    //diff += (((ratioshap1[pos] - 0.5) * (ratioshap2[pos] - 0.5))/(0.25)).into_inner();
+                    diff += 1.
                 }
             }
         }
     }
 
     return (same, diff);
+}
+
+pub fn phred_scale_dbg(frag: &FragDBG, pos: &SnpPosition) -> GenotypeCount {
+    if constants::USE_QUAL_SCORES {
+        let qual_score = frag.qual_dict.get(&pos).unwrap();
+        let prob = 1. - 10_f32.powf((*qual_score) as f32 / -10.);
+        return OrderedFloat(prob.into());
+    } else {
+        return OrderedFloat(1.);
+    }
 }
 
 #[inline]

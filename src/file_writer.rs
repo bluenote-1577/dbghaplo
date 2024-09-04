@@ -1,7 +1,7 @@
 use crate::constants;
 use bio::io::fasta::{IndexedReader as FastaIndexedReader};
-use crate::part_block_manip;
 use crate::types_structs::*;
+use crate::parse_cmd_line::Options;
 use crate::utils_frags;
 use bio::alphabets::dna::revcomp;
 use bio::io::fastq;
@@ -30,7 +30,7 @@ pub fn write_outputs(
     chrom_seqs: &mut FastaIndexedReader<std::fs::File>,
 ) {
     let trim_reads = options.trim_reads;
-    let gzip = options.gzip;
+    let gzip = true;
     fs::create_dir_all(&out_bam_part_dir).unwrap();
     let mut fasta_seq = vec![];
     chrom_seqs.fetch_all(contig).unwrap();

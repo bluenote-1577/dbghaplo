@@ -3,8 +3,9 @@ use log::*;
 use std::ffi::{OsString};
 use std::process::Command;
 use crate::constants;
+use crate::parse_cmd_line::Options;
 use crate::types_structs::{
-    build_frag, Frag, Genotype, GnPosition, SnpPosition, VcfProfile, Options
+    build_frag, Frag, Genotype, GnPosition, SnpPosition, VcfProfile,
 };
 use debruijn::dna_string::DnaString;
 use fxhash::{FxHashMap, FxHashSet};
@@ -311,34 +312,18 @@ pub fn get_vcf_profile<'a>(vcf_file: &str, ref_chroms: &'a Vec<String>) -> VcfPr
 
 pub fn get_bam_readers(
     options: &Options,
-) -> (bam::IndexedReader, Option<bam::IndexedReader>){
+) -> bam::IndexedReader{
     let long_bam_file = &options.bam_file;
-    let short_bam_file = &options.short_bam_file;
-    let short_bam_read;
-    if short_bam_file != ""{
-        let short_bam = match bam::IndexedReader::from_path(short_bam_file) {
-            Ok(short_bam) => short_bam,
-            Err(_) => {
-                error!("rust_htslib had an error while reading the short-read BAM file. Exiting");
-                std::process::exit(1)
-            }
-        };
-        short_bam_read = Some(short_bam);
-    }
-    else{
-        short_bam_read = None;
-    }
     let long_bam = match bam::IndexedReader::from_path(long_bam_file) {
         Ok(long_bam) => long_bam,
         Err(_) =>{ error!("rust_htslib had an error while reading BAM file. Exiting");std::process::exit(1)},
     };
 
-    return (long_bam, short_bam_read);
+    return long_bam;
 }
 
 pub fn get_frags_from_bamvcf_rewrite(
     main_bam: &mut bam::IndexedReader,
-    short_bam: &mut Option<bam::IndexedReader>,
     vcf_profile: &VcfProfile,
     options: &Options,
     chrom_seqs: &mut Option<FastaIndexedReader<std::fs::File>>,
@@ -355,23 +340,13 @@ pub fn get_frags_from_bamvcf_rewrite(
     let long_bam = main_bam;
     long_bam.fetch(contig).unwrap();
 
-    let mut record_vec_long = vec![];
+    let mut record_vec = vec![];
     for record in long_bam.records() {
         if record.is_ok() {
-            record_vec_long.push(record.unwrap());
+            record_vec.push(record.unwrap());
         }
     }
 
-    let mut record_vec_short = vec![];
-    if short_bam.is_some(){
-        let short_bam = short_bam.as_mut().unwrap();
-        short_bam.fetch(contig).unwrap();
-        for record in short_bam.records() {
-            if record.is_ok() {
-                record_vec_short.push(record.unwrap());
-            }
-        }
-    }
     let mut seq = Vec::new(); 
     if chrom_seqs.is_some(){
         chrom_seqs.as_mut().unwrap().fetch_all(contig).expect("Error reading fasta file.");
@@ -379,8 +354,8 @@ pub fn get_frags_from_bamvcf_rewrite(
     }
 
     let ref_id_to_frag_map: Mutex<FxHashMap<_, _>> = Mutex::new(FxHashMap::default());
-    let rec_vecs = vec![record_vec_short, record_vec_long];
-    log::info!("Number of records in BAM file for contig: {}", rec_vecs[0].len() + rec_vecs[1].len());
+    let rec_vecs = vec![record_vec];
+    log::info!("Number of records in BAM file for contig: {}", rec_vecs[0].len());
     for record_vec in rec_vecs {
         record_vec
             .into_par_iter()
@@ -415,7 +390,7 @@ pub fn get_frags_from_bamvcf_rewrite(
                             frag_from_record(&record, snp_positions_contig, pos_allele_map, count);
 
 //                        if frag.seq_dict.keys().len() > 0 {
-                        if !chrom_seqs.is_none(){
+                        if !chrom_seqs.is_none() && options.realign {
                             alignment::realign(
                                 &seq,
                                 &mut frag,
@@ -496,17 +471,9 @@ fn combine_frags(
 
     let mut ref_frags = vec![];
     for (_id, mut frags) in id_to_frag_map {
-        //        dbg!(&str::from_utf8(&_id), frags.len(), frags.iter().map(|x| x.0).collect::<Vec<u16>>());
         //paired
         if frags.len() == 2 && frags[0].1.is_paired && frags[1].1.is_paired {
-            //            log::trace!(
-            //                "{}, {},{},{},{}",
-            //                frags[0].1.id,
-            //                frags[0].0,
-            //                frags[0].1.first_position,
-            //                frags[1].0,
-            //                frags[1].1.first_position
-            //            );
+
             frags.sort();
             let first = std::mem::take(&mut frags[0]);
             let second = std::mem::take(&mut frags[1]);
