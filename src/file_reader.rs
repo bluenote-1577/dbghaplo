@@ -1,6 +1,6 @@
 use crate::alignment;
 use log::*;
-use std::ffi::{OsString};
+use std::ffi::OsString;
 use std::process::Command;
 use crate::constants;
 use crate::parse_cmd_line::Options;
@@ -12,7 +12,7 @@ use fxhash::{FxHashMap, FxHashSet};
 use rayon::prelude::*;
 use rust_htslib::bam::ext::BamRecordExtensions;
 use rust_htslib::bam::IndexedReader;
-use bio::io::fasta::{IndexedReader as FastaIndexedReader};
+use bio::io::fasta::IndexedReader as FastaIndexedReader;
 use rust_htslib::{bam, bam::Read as DUMMY_NAME1};
 use rust_htslib::{bcf, bcf::Read as DUMMY_NAME2};
 use std::fs::File;
@@ -93,6 +93,7 @@ where
                         snp_pos_to_seq_pos: FxHashMap::default(),
                         first_pos_base: GnPosition::MAX,
                         last_pos_base: GnPosition::MAX,
+                        forward_strand: true,
                     };
 
                     all_frags.push(new_frag);
@@ -278,7 +279,7 @@ pub fn get_vcf_profile<'a>(vcf_file: &str, ref_chroms: &'a Vec<String>) -> VcfPr
             .or_insert(FxHashMap::default());
         let snp_pos_to_gn_pos_map = vcf_snp_pos_to_gn_pos_map
             .entry(contig_name.as_str())
-            .or_insert(FxHashMap::default());
+            .or_insert(vec![]);
 
         for allele in alleles.iter() {
             if allele.len() > 1 {
@@ -298,8 +299,8 @@ pub fn get_vcf_profile<'a>(vcf_file: &str, ref_chroms: &'a Vec<String>) -> VcfPr
         }
         curr_pos = unr.pos();
 
-        snp_pos_to_gn_pos_map.insert(snp_counter, unr.pos() as GnPosition);
-        pos_to_snp_counter_map.insert(unr.pos() as GnPosition, snp_counter);
+        snp_pos_to_gn_pos_map.push(unr.pos() as GnPosition);
+        pos_to_snp_counter_map.insert(unr.pos() as GnPosition, snp_counter - 1);
         snp_counter += 1;
         pos_allele_map.insert(unr.pos() as GnPosition, al_vec);
     }
@@ -558,8 +559,8 @@ fn combine_frags(
             //dbg!(&supp_intervals);
             if supp_intervals.len() > 0{
                 for i in 0..supp_intervals.len() - 1 {
-                    if snp_to_gn[&supp_intervals[i + 1].0] as i64
-                        - snp_to_gn[&supp_intervals[i].1] as i64
+                    if snp_to_gn[supp_intervals[i + 1].0 as usize - 1] as i64
+                        - snp_to_gn[supp_intervals[i].1 as usize - 1] as i64
                         > supp_aln_dist_cutoff
                     {
                         take_primary_only = true;
@@ -631,9 +632,11 @@ fn frag_from_record(
     let first_in_pair_mask = 64;
     let second_in_pair_mask = 128;
     let supplementary_mask = 2048;
+    let reverse_mask = 16;
     let mut leading_hardclips = 0;
     let paired =
         (record.flags() & first_in_pair_mask > 0) || (record.flags() & second_in_pair_mask > 0);
+    let reverse = record.flags() & reverse_mask > 0;
     let aligned_pairs = record.aligned_pairs_full();
     let mut _last_read_aligned_pos = 0;
     let mut frag = build_frag(
@@ -641,6 +644,7 @@ fn frag_from_record(
         counter_id,
         paired,
     );
+    frag.forward_strand = !reverse;
     if record.flags() & supplementary_mask > 0 {
         leading_hardclips = record.cigar().leading_hardclips();
     }
@@ -670,7 +674,7 @@ fn frag_from_record(
                     .enumerate()
                 {
                     if readbase == *allele {
-                        let snp_pos = snp_positions[&genome_pos] as SnpPosition;
+                        let snp_pos = snp_positions[&genome_pos] as SnpPosition + 1;
                         frag.seq_dict.insert(snp_pos, i as Genotype);
                         frag.qual_dict.insert(snp_pos, record.qual()[seq_pos]);
                         if snp_pos < frag.first_position {

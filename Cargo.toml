@@ -28,6 +28,7 @@ disjoint-sets = "0.4.2"
 ordered-float = "2.0"
 flate2 = "1"
 derivative = "2.2"
+fishers_exact = "1.0"
 
 [features]
 default = ["sse2"]

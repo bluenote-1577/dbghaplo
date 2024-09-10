@@ -7,7 +7,7 @@ use crate::types_structs::{Genotype, SnpPosition, GnPosition};
 pub fn realign(
     ref_gn: &[u8],
     frag: &mut Frag,
-    var_to_gn_pos: &FxHashMap<SnpPosition, GnPosition>,
+    var_to_gn_pos: &Vec<GnPosition>,
     gn_pos_to_allele: &FxHashMap<GnPosition, Vec<Genotype>>,
 ) {
     let flank = 16;
@@ -18,7 +18,7 @@ pub fn realign(
     };
     let mut a = Block::<false, false>::new(2 * flank, 2 * flank , 2 * flank);
     for (snp_pos, orig_geno) in frag.seq_dict.iter_mut() {
-        let snp_gn_pos = var_to_gn_pos[snp_pos] as usize;
+        let snp_gn_pos = var_to_gn_pos[*snp_pos as usize - 1] as usize;
         let snp_q_pos = frag.snp_pos_to_seq_pos[&(snp_pos)].1 as usize;
         if !(flank > snp_gn_pos
             || flank + snp_gn_pos >= ref_gn.len()

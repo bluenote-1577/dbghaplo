@@ -11,3 +11,5 @@ pub mod constants;
 pub mod parse_cmd_line;
 
 pub mod dbg;
+
+pub mod consensus;

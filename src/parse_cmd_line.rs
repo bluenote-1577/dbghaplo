@@ -1,14 +1,9 @@
-use crate::constants::*;
-use std::env;
-use std::fs::File;
-use log::*;
-use std::io::Write;
-use std::path::Path;
 use clap::Parser;
 
 #[derive(clap::ValueEnum, Clone, Debug, Default)]
 pub enum Preset{
     #[default]
+    OldLongReads,
     NanoporeR9,
     NanoporeR10,
     HiFi,
@@ -63,7 +58,7 @@ pub struct Options{
     #[arg(long, default_value_t = 30)]
     pub supp_mapq_cutoff: u8,
 
-    #[arg(long, default_value_t = 10000)]
+    #[arg(long, default_value_t = 5000)]
     pub supp_aln_dist_cutoff: i64,
 
     #[arg(short, long, value_enum, default_value_t = Preset::NanoporeR9)]
@@ -78,7 +73,7 @@ pub struct Options{
     #[arg(long)]
     pub debug: bool,
 
-    #[arg(long, default_value_t = 0.05)]
+    #[arg(long, default_value_t = 0.25)]
     pub min_abund: f64,
 
     #[arg(long, default_value_t = 5.)]
@@ -87,11 +82,17 @@ pub struct Options{
     #[arg(long, default_value_t = 3)]
     pub min_qual: u8,
 
-    #[arg(long, default_value_t = 10000)]
+    #[arg(long, default_value_t = 1000000000000)]
     pub max_frags: usize,
 
     #[arg(long)]
     pub realign: bool,
+
+    #[arg(long)]
+    pub resolution: Option<f64>,
+
+    #[arg(long, default_value_t = 0.005)]
+    pub strand_bias_fdr: f64
 }
 
 

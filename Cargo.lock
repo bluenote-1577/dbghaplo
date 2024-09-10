@@ -423,6 +423,7 @@ dependencies = [
  "debruijn",
  "derivative",
  "disjoint-sets",
+ "fishers_exact",
  "flate2",
  "fxhash",
  "itertools 0.10.5",
@@ -541,6 +542,12 @@ name = "feature-probe"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "835a3dc7d1ec9e75e2b5fb4ba75396837112d2060b03f7d43bc1897c7f7211da"
+
+[[package]]
+name = "fishers_exact"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64993467e77edcbfce160dae38337b4c538aa0e8027039c6eabba8fa335c7b1e"
 
 [[package]]
 name = "fixedbitset"

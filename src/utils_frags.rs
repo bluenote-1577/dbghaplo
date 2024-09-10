@@ -697,9 +697,10 @@ pub fn distance_between_haplotypes(
     hap1: &Haplotype,
     hap2: &Haplotype,
     range: &(SnpPosition, SnpPosition),
-    reliability_cutoff: f64
+    reliability_cutoff: f64,
+    cov_cutoff: f64,
 ) -> (f64, f64) {
-    let cov_cutoff = constants::DIST_COV_CUTOFF;
+    let cov_cutoff = OrderedFloat(cov_cutoff);
     let mut same = 0.;
     let mut diff = 0.;
     let ratioshap1 = hap1.iter().map(|(snp, genodict)| {

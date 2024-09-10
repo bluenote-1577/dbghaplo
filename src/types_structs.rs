@@ -9,6 +9,19 @@ use rust_htslib::bam::Record;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 
+pub const SEQ_TO_ASCII: [u8; 4] = [b'A', b'C', b'G', b'T'];
+
+pub const BYTE_TO_SEQ: [u8; 256] = [
+    0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
 pub type GnPosition = usize;
 pub type SnpPosition = u32;
 pub type Genotype = u8;
@@ -18,11 +31,18 @@ pub type VarMer = Vec<(SnpPosition, Genotype)>;
 pub static GAP_CHAR: Genotype = 9;
 pub type FlowUpVec = Vec<((usize, usize), (usize, usize), f64)>;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum GraphConstraint {
+    RequireDag,
+    RequireDagRescue,
+    NoRequireDag
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct VcfProfile<'a> {
     pub vcf_pos_allele_map: FxHashMap<&'a str, FxHashMap<GnPosition, Vec<Genotype>>>,
     pub vcf_pos_to_snp_counter_map: FxHashMap<&'a str, FxHashMap<GnPosition, SnpPosition>>,
-    pub vcf_snp_pos_to_gn_pos_map: FxHashMap<&'a str, FxHashMap<SnpPosition, GnPosition>>,
+    pub vcf_snp_pos_to_gn_pos_map: FxHashMap<&'a str, Vec<GnPosition>>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +67,8 @@ pub struct Frag {
     pub is_paired: bool,
     pub snp_pos_to_seq_pos: FxHashMap<SnpPosition, (u8, GnPosition)>,
     pub first_pos_base: GnPosition,
-    pub last_pos_base: GnPosition
+    pub last_pos_base: GnPosition,
+    pub forward_strand: bool
     
 }
 
@@ -62,6 +83,7 @@ pub struct FragDBG {
     pub last_position: SnpPosition,
     pub snp_pos_to_seq_pos: FxHashMap<SnpPosition, (u8, GnPosition)>,
     pub qual_dict: FxHashMap<SnpPosition, u8>,
+    pub forward_strand: bool,
 }
 
 impl Ord for Frag{
@@ -262,6 +284,7 @@ pub fn build_frag(id: String, counter_id: usize, is_paired: bool) -> Frag {
         snp_pos_to_seq_pos: FxHashMap::default(),
         first_pos_base: GnPosition::MAX,
         last_pos_base: GnPosition::MAX,
+        forward_strand: true
     };
 
     toret
@@ -435,6 +458,15 @@ pub struct HapFinalResult<'a> {
     pub assigned_frags: Vec<&'a FragDBG>,
     pub path_frag: DictFrag,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HapFinalResultString {
+    pub relative_abundances: f64,
+    pub depth: f64,
+    pub assigned_frags: Vec<String>,
+}
+
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConsensusResult{

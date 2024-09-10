@@ -1,4 +1,5 @@
 use crate::parse_cmd_line;
+use fishers_exact::fishers_exact;
 use rust_lapper::*;
 use std::sync::Mutex;
 use rayon::prelude::*;
@@ -8,99 +9,145 @@ use crate::utils_frags;
 use disjoint_sets::UnionFind;
 use fxhash::{FxHashMap, FxHashSet};
 use ordered_float::*;
-use petgraph::dot::{Config, Dot};
-use petgraph::graph::{DiGraph, NodeIndex};
-use petgraph::{algo, prelude::*};
-use statrs::distribution::{Binomial, Discrete, DiscreteCDF};
-use statrs::statistics::Distribution;
+use statrs::distribution::{Binomial, DiscreteCDF};
 use std::collections::VecDeque;
 use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::io::{self, BufReader, BufWriter, Write};
-use std::mem;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-pub fn construct_dbg(
-    dbg_frags: &Vec<FragDBG>,
+pub fn dbghap_run(
+    mut dbg_frags:Vec<FragDBG>,
     options: &Options,
     snp_pos_to_genome_pos: &Vec<usize>,
     contig_name: &str,
-) {
+) -> Option<Vec<HapFinalResultString>> {
     let k;
     let end;
-    let thirty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.33);
-    let fifty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.5);
-    let (_, snps) = count_kmers(dbg_frags, thirty);
+    let mut thirty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.33);
+    let mut fifty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.5);
     let max_k_preset;
     let coverage_divider;
-    let error_ratio;
+    let max_median;
+    let mut resolution;
     match options.preset {
+        parse_cmd_line::Preset::OldLongReads => {
+            max_k_preset = 10;
+            coverage_divider = 400;
+            max_median = 50;
+            resolution = 0.02;
+        }
+
         parse_cmd_line::Preset::NanoporeR9 => {
             max_k_preset = 20;
-            coverage_divider = 200;
-            error_ratio = 0.10;
+            coverage_divider = 400;
+            max_median = 150;
+            resolution = 0.01;
         }
         parse_cmd_line::Preset::NanoporeR10 => {
             max_k_preset = 35;
-            coverage_divider = 200;
-            error_ratio = 0.02;
+            coverage_divider = 400;
+            max_median = 250;
+            resolution = 0.005;
         }
         parse_cmd_line::Preset::HiFi => {
             max_k_preset = 100;
-            coverage_divider = 200;
-            error_ratio = 0.005;
+            coverage_divider = 400;
+            max_median = 500;
+            resolution = 0.001;
         }
         parse_cmd_line::Preset::Illumina => {
             max_k_preset = 50;
-            coverage_divider = 200;
-            error_ratio = 0.005;
+            coverage_divider = 400;
+            max_median = 200;
+            resolution = 0.005;
         }
     }
+
+    if let Some(res) = options.resolution {
+        resolution = res;
+    }
+
+    log::debug!("33% number of SNPs in a read is {}", thirty);
+    log::debug!("50th perc. number of SNPs in a read is {}", fifty);
+
+    //subsample if too many snps
+    let division_factor = fifty as f64 / max_median as f64;
+    let mut snp_pos_to_genome_pos_new = snp_pos_to_genome_pos.clone();
+    let mut subsampled_positions = FxHashSet::default();
+    let mut old_pos_to_index_map = FxHashMap::default();
+    if division_factor > 1.{
+        log::trace!("Subsampling SNPs; division factor is {}", division_factor);
+        for i in 0..snp_pos_to_genome_pos.len() {
+            let subsampled_pos = (i as f64 * division_factor) as usize;
+            if subsampled_pos >= snp_pos_to_genome_pos.len() {
+                break;
+            }
+            subsampled_positions.insert(subsampled_pos as u32 + 1);
+            old_pos_to_index_map.insert(subsampled_pos as u32 + 1, i as u32 + 1);
+        }
+        let mut ss_pos_vec = subsampled_positions.iter().collect::<Vec<_>>();
+        ss_pos_vec.sort();
+        log::trace!("Subsampled indices: {:?}", ss_pos_vec);
+    }
+
+    if !subsampled_positions.is_empty(){
+        log::debug!("Subsampling SNPs");
+        snp_pos_to_genome_pos_new = subsample_positions_fragdbg(&mut dbg_frags, &subsampled_positions, &old_pos_to_index_map, snp_pos_to_genome_pos);
+        thirty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.33);
+        fifty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.50);
+    }
+
+    let num_snps = snp_pos_to_genome_pos_new.len();
+    let snp_pos_to_genome_pos_new = strand_bias_filter(&mut dbg_frags, options, num_snps, &snp_pos_to_genome_pos_new);
+    let num_snps = snp_pos_to_genome_pos_new.len();
 
     if let Some(min_k) = options.min_k {
         k = min_k;
     } else {
-        k = thirty.min(snps.len() * 7 / 10).min(max_k_preset).max(1);
+        k = thirty.min(num_snps * 7 / 10).min(max_k_preset).max(1);
     }
     if let Some(end_k) = options.max_k {
         end = end_k;
     } else {
-        end = (fifty).min(snps.len() * 8 / 10).min(max_k_preset).max(k);
+        end = (fifty).min(num_snps * 8 / 10).min(max_k_preset).max(k);
     }
-    log::info!("33% number of SNPs in a read is {}", thirty);
-    log::info!("50th perc. number of SNPs in a read is {}", fifty);
 
-    let (_, snps) = count_kmers(dbg_frags, k);
-    let k = k.min(snps.len() * 7 / 10).max(1);
-    let end = (end).min(snps.len() * 8 / 10).max(k);
-    let end = end - k;
+    //disable this for now
+    let end = 0;
     log::trace!("Start k: {}, end k: {}", k, end);
 
-    let dbg = dbg_from_frags(dbg_frags, k, None, None, None);
+    let dbg = dbg_from_frags(&dbg_frags, k, None, None, None);
     log::debug!("Constructed DBG for k = {}", k);
-    let (mut kmer_count, snps) = count_kmers(dbg_frags, k);
+    let (mut kmer_count, _) = count_kmers(&dbg_frags, k);
     let total_cov = kmer_count.iter().fold(0, |acc, (_varmer, cov)| acc + cov);
     let min_cov = u64::max(
-        total_cov / (snps.len() as u64 - k as u64 + 1) / coverage_divider,
+        total_cov / (num_snps as u64 - k as u64 + 1) / coverage_divider,
         2,
     );
     log::debug!("Minimum coverage for global filter is : {:?}", min_cov);
 
     let mut dbg = filter_dbg(dbg, Some(min_cov), None, k);
+    print_dbg(&dbg, "dbg.dot");
+
     let mut uni = get_unitigs(&dbg, k, false);
     kmer_count.retain(|varmer, _cov| dbg.contains_key(varmer));
     let step = 1;
 
     for l in (step..end + 1).step_by(step) {
-        dbg = dbg_from_frags(dbg_frags, l + k, Some(dbg), Some(&uni), Some(step));
+        dbg = dbg_from_frags(&dbg_frags, l + k, Some(dbg), Some(&uni), Some(step));
         uni = get_unitigs(&dbg, k + l, false);
     }
+    print_dbg(&uni, "unitigs.dot");
 
-    print_dbg(&dbg, "dbg.dot");
+    let tips = remove_tips(&uni, options, k + end);
+    uni = filter_dbg(uni, None, Some(tips), k + end);
+    print_dbg(&uni, "tips_removed.dot");
+    uni = get_unitigs(&uni, k + end, true);
+    print_dbg(&uni, "tips_unitigs.dot");
+
     //Unitigging
     let unitigs = uni;
-    print_dbg(&unitigs, "unitigs.dot");
 
     log::debug!("Cleaning unitigs");
     let mut final_unitigs = unitigs;
@@ -108,9 +155,15 @@ pub fn construct_dbg(
         let bad_unitigs = query_unitigs(&final_unitigs, i);
         log::debug!("Number of bad unitigs {}", bad_unitigs.len());
         let filtered_unitigs = filter_dbg(final_unitigs, None, Some(bad_unitigs), k + end);
+        print_dbg(&filtered_unitigs, format!("clean_dbg_{}.dot", i).as_str());
         final_unitigs = get_unitigs(&filtered_unitigs, k + end, true);
-        print_dbg(&final_unitigs, "clean_unitigs.dot");
+        print_dbg(&final_unitigs, format!("clean_unitigs_{}.dot", i).as_str());
     }
+
+    let tips = remove_tips(&final_unitigs, options, k + end);
+    final_unitigs = filter_dbg(final_unitigs, None, Some(tips), k + end);
+    print_dbg(&final_unitigs, "tips_removed_round2.dot");
+    final_unitigs = get_unitigs(&final_unitigs, k + end, true);
 
     let final_unitigs = clean_hanging_kmers(final_unitigs, k + end - 1);
     print_dbg(&final_unitigs, "nohang_unitigs.dot");
@@ -140,34 +193,45 @@ pub fn construct_dbg(
 
     let path_dict = Mutex::new(FxHashMap::default());
     //for dict_frag in vec_df_all.iter() {
+    log::trace!("ALIGN TO GRAPH");
     vec_df_all.into_par_iter().for_each(|dict_frag| {
-        log::trace!("ALIGN TO GRAPH");
         print_varmer_d(&dict_frag, true);
-        let hits = get_hits(&dict_frag, &vec_df_graph, 100, 0, true);
+        let hits = get_hits(&dict_frag, &vec_df_graph, 100000, 10, true);
         let dp_res = dp_hits(
             &hits,
             &dict_frag,
             &final_unitigs,
-            100,
+            10000,
             -1.0,
             false,
             false,
-            false,
+            GraphConstraint::RequireDagRescue,
             100,
+            k,
+            &FxHashSet::default()
         );
         let varmers = varmers_from_dp_res(&dp_res, 0.2);
         log::trace!("HITS: {:?}", hits.len());
-        log::trace!("DP RES: {:?}", dp_res.score);
+        log::trace!("4P RES: {:?}", dp_res.score);
         for varmer in varmers.iter() {
             print_varmer_d(varmer, true);
         }
+        log::trace!("FIN DP RES");
         *path_dict.lock().unwrap().
             entry(varmers).or_insert(0) += 1;
     });
 
     let mut unitig_paths = vec![];
+    let path_dict = path_dict.into_inner().unwrap();
+    if path_dict.is_empty() {
+        log::error!("No paths found. Exiting.");
+        return None;
+    }
+    let mut counts = path_dict.iter().map(|(_, count)| *count).collect::<Vec<_>>();
+    counts.sort();
+    let median_count = counts[counts.len() / 2];
 
-    for (varmers, count) in path_dict.into_inner().unwrap().into_iter() {
+    for (varmers, count) in path_dict.into_iter() {
         log::trace!("INITIAL PATH COUNT: {}", count);
         for varmer in varmers.iter() {
             print_varmer_d(varmer, true);
@@ -175,7 +239,7 @@ pub fn construct_dbg(
         if varmers.len() == 0 {
             continue;
         }
-        if count < 3 {
+        if count < (min_cov - 1).min(3).min(median_count) {
             continue;
         }
         let path = VarmerPath {
@@ -202,7 +266,7 @@ pub fn construct_dbg(
             .map(|(_, x)| &vec_df_graph[(*x) as usize])
             .collect::<Vec<_>>();
         let min_cov_path = path_as_df.iter().map(|x| x.cov).min().unwrap();
-        if min_cov_path > info.coverage * 10 {
+        if min_cov_path / 3 > info.coverage {
             log::trace!(
                 "PATH ALIGN VS UNITIG COV CUTOFF - FAILED -- MIN COV PATH: {} INFO COV: {}",
                 min_cov_path,
@@ -222,7 +286,6 @@ pub fn construct_dbg(
             }
             let path_as_varmers = int_unitig
                 .iter()
-                .rev()
                 .map(|(_, x)| (&vec_df_graph[(*x) as usize].seq_vec, info.coverage as usize))
                 .collect::<Vec<_>>();
             paths.push(path_as_varmers);
@@ -230,73 +293,153 @@ pub fn construct_dbg(
     }
 
     log::debug!("Number of candidate integer unitig paths passing filters: {}", paths.len());
-    let mut hap_path_results = get_path_haps(dbg_frags, &final_unitigs, paths, snps.len(), options);
+    let mut hap_path_results = get_path_haps(&dbg_frags, &final_unitigs, paths, num_snps, options);
     print_final_hap_results(
         &hap_path_results,
-        snps.len(),
+        num_snps,
         options,
         "hap_before.txt",
         "id_before.txt",
         "reads_before.fa",
         contig_name,
+        None,
     );
 
     let mut j = 0;
     loop{
         j+=1;
-        log::info!("Consensus round {}", j);
+        log::debug!("Consensus round {}", j);
         let final_results_consensus = consensus(
             &hap_path_results,
-            snps.len(),
-            snp_pos_to_genome_pos,
-            error_ratio,
-            dbg_frags,
+            num_snps,
+            &snp_pos_to_genome_pos_new,
+            &dbg_frags,
             &format!("consensus-{}.txt", j),
             options,
             contig_name,
+            false,
+            0.0,
+        ).0;
+
+        print_final_hap_results(
+            &final_results_consensus,
+            num_snps,
+            options,
+            format!("haplotypes-{}.txt", j).as_str(),
+            format!("ids-{}.txt", j).as_str(),
+            format!("reads-{}.fa", j).as_str(),
+            contig_name,
+            None,
         );
 
-        if final_results_consensus.len() == hap_path_results.len() {
+
+
+        let mut same = false;
+        if hap_path_results.len() == final_results_consensus.len() {
+            same = true;
+        }
+
+        if same{
+            hap_path_results = final_results_consensus;
+            
+            log::debug!("Semifinal consensus");
+            let (final_results, unassigned) = consensus(
+                &hap_path_results,
+                num_snps,
+                &snp_pos_to_genome_pos_new,
+                &dbg_frags,
+                &format!("consensus-semi.txt"),
+                options,
+                contig_name,
+                false,
+                resolution
+            );
+
+            let final_results_filtered = filter_final_haplotypes(&final_results, options);
+
             print_final_hap_results(
-                &final_results_consensus,
-                snps.len(),
+                &final_results_filtered,
+                num_snps,
                 options,
                 "haplotypes.txt",
                 "ids.txt",
                 "reads.fa",
                 contig_name,
+                Some(&unassigned),
             );
 
-            log::info!("Final consensus");
+            log::debug!("Final consensus");
             let _only_for_printing = consensus(
-                &final_results_consensus,
-                snps.len(),
-                snp_pos_to_genome_pos,
-                error_ratio,
-                dbg_frags,
+                &final_results_filtered,
+                num_snps,
+                &snp_pos_to_genome_pos_new,
+                &dbg_frags,
                 &format!("consensus-final.txt"),
                 options,
                 contig_name,
+                false,
+                resolution,
             );
-
             break;
         }
         hap_path_results = final_results_consensus;
     }
 
+    let mut final_results_strings = vec![];
+
+    for res in hap_path_results.iter() {
+        let abund = res.relative_abundances;
+        let depth = res.depth;
+        let mut read_ids = vec![];
+        for frag in res.assigned_frags.iter() {
+            read_ids.push(frag.id.clone());
+        }
+
+        let hap_res_str = HapFinalResultString {
+            relative_abundances: abund,
+            depth,
+            assigned_frags: read_ids,
+        };
+        
+        final_results_strings.push(hap_res_str);
+    }
+
+    return Some(final_results_strings);
+
+}
+
+fn filter_final_haplotypes<'a>(
+    final_results: &'a Vec<HapFinalResult>,
+    options: &'a Options,
+) -> Vec<HapFinalResult<'a>> {
+    let mut filtered_results = vec![];
+    for (i,res) in final_results.iter().enumerate() {
+        if res.relative_abundances < options.min_abund {
+            log::debug!("Haplotype {} has relative abundance of {} which is less than the minimum abundance of {}. Skipping", i, res.relative_abundances, options.min_abund);
+            continue;
+        }
+        if res.depth < options.min_cov {
+            log::debug!("Haplotype {} has average coverage depth of {}x which is less than the minimum depth of {}x. Skipping", i, res.depth, options.min_cov);
+            continue;
+        }
+        filtered_results.push(res.clone());
+    }
+    return filtered_results;
 }
 
 fn consensus<'a>(
     hap_path_results: &Vec<HapFinalResult>,
     snps: usize,
     snp_pos_to_genome_pos: &Vec<usize>,
-    error_ratio: f64,
     dbg_frags: &'a Vec<FragDBG>,
     consensus_file_loc: &str,
     options: &Options,
     contig: &str,
-) -> Vec<HapFinalResult<'a>> {
+    only_print: bool,
+    resolution: f64,
+) -> (Vec<HapFinalResult<'a>>, Vec<&'a FragDBG>) {
 
+    let previous_total_depth = hap_path_results.iter().map(|x| x.depth).sum::<f64>();
     let dir = Path::new(&options.output_dir);
     let cons_file = dir.join(consensus_file_loc);
     let cons_file = cons_file.to_str().unwrap();
@@ -351,18 +494,22 @@ fn consensus<'a>(
         }
         consensus_file.write(b"\n").unwrap();
     }
+    if only_print {
+        return (vec![], vec![]);
+    }
 
     let mut union_find = UnionFind::new(haps.len());
+    let dist_cutoff = (previous_total_depth/400.).max(2.);
     for i in 0..haps.len() {
         for j in 0..i {
             log::trace!("Comparing haplotypes {} and {}", i, j);
             let (same, diff) =
-                utils_frags::distance_between_haplotypes(&haps[i], &haps[j], &(0, u32::MAX), 0.85);
+                utils_frags::distance_between_haplotypes(&haps[i], &haps[j], &(0, u32::MAX), 0.75, dist_cutoff);
             log::trace!("Same: {}, Diff: {}", same, diff);
-            if same == 0. {
+            if same < 2. {
                 continue;
             }
-            if diff == 0.{
+            if diff == 0. || (diff as f64 / same as f64) < resolution{
                 union_find.union(i,j);
             }
 //            if (diff as f64 / same as f64) < error_ratio {
@@ -425,7 +572,7 @@ fn consensus<'a>(
     }
 
     let mut final_results_consensus = new_final_results_map.into_values().collect::<Vec<_>>();
-    reassign_frags(dbg_frags, &mut final_results_consensus);
+    let unassigned = reassign_frags(dbg_frags, &mut final_results_consensus, true);
 
     for res in final_results_consensus.iter_mut() {
         if res.assigned_frags.is_empty() {
@@ -456,7 +603,7 @@ fn consensus<'a>(
     final_results_consensus.iter_mut().for_each(|res| { res.relative_abundances = 100. * res.depth / total_depth; });
     final_results_consensus
         .sort_by(|a, b| a.path_frag.first_position.cmp(&b.path_frag.first_position));
-    return final_results_consensus;
+    return (final_results_consensus, unassigned);
 }
 
 pub fn frag_to_dbgfrag(frag: &Frag, options: &Options) -> FragDBG {
@@ -488,6 +635,7 @@ pub fn frag_to_dbgfrag(frag: &Frag, options: &Options) -> FragDBG {
         last_position,
         snp_pos_to_seq_pos: frag.snp_pos_to_seq_pos.clone(),
         qual_dict: frag.qual_dict.clone(),
+        forward_strand: frag.forward_strand,
     };
     toret
 }
@@ -765,9 +913,6 @@ fn count_kmers(dbg_frags: &Vec<FragDBG>, k: usize) -> (FxHashMap<VarMer, u64>, F
         let mut varmer = VecDeque::new();
         for (curr_pos, curr_geno) in seq.iter() {
             snps.insert(*curr_pos);
-            if *curr_pos > 250 {
-                break;
-            }
             varmer.push_back((*curr_pos, *curr_geno));
             if varmer.len() == k {
                 let new_varmer = varmer.iter().cloned().collect::<VarMer>();
@@ -918,8 +1063,10 @@ fn dp_hits<'a>(
     mismatch_pen: f64,
     ambiguous_allowed: bool,
     del_penalty: bool,
-    require_dag: bool,
+    require_dag: GraphConstraint,
     band: usize,
+    k: usize,
+    forbidden_nodes: &FxHashSet<&VarMer>,
 ) -> DpResult<'a> {
     let empty_result = DpResult {
         score: (0., 0),
@@ -941,11 +1088,18 @@ fn dp_hits<'a>(
     let mut dp_vec = hits
         .iter()
         .map(|x| {
-            (
-                x.same.len() as f64
-                    + mismatch_pen * (x.r_to_a.len() + x.a_to_r.len() + x.del.len()) as f64,
-                x.varmer.cov,
-            )
+            if del_penalty {
+                (
+                    x.same.len() as f64
+                        + mismatch_pen * (x.r_to_a.len() + x.a_to_r.len() + x.del.len()) as f64,
+                    x.varmer.cov,
+                )
+            } else {
+                (
+                    x.same.len() as f64 + mismatch_pen * (x.r_to_a.len() + x.a_to_r.len()) as f64,
+                    x.varmer.cov,
+                )
+            }
         })
         .collect::<Vec<(f64, u64)>>();
     let mut traceback_vec = (0..hits.len()).map(|x| x).collect::<Vec<usize>>();
@@ -971,12 +1125,15 @@ fn dp_hits<'a>(
         .collect::<Vec<FxHashSet<u32>>>();
 
     for i in 0..hits.len() {
+        if forbidden_nodes.contains(&hits[i].varmer.seq_vec) {
+            continue;
+        }
         let mut best_index = i;
         //let mut new_scores = vec![0.; i];
         let mut best_score = 0.;
         let mut last_tied = false;
 
-        if varmer_d.last_position == 29 && varmer_d.first_position == 1 {
+        if varmer_d.last_position == 142 && varmer_d.first_position == 1 {
             let hit = &hits[i];
             log::trace!(
                 "TEST HIT HIT: {:?}, score {}, bad {}",
@@ -989,20 +1146,43 @@ fn dp_hits<'a>(
         let ind = if i >= band { i - band } else { 0 };
 
         for j in ind..i {
+            let cov_j = hits[j].varmer.cov;
             let mut score = 0;
             let mut bad = 0;
             let mut inside = false;
-            if require_dag {
+            if forbidden_nodes.contains(&hits[j].varmer.seq_vec) {
+                continue;
+            }
+            if require_dag == GraphConstraint::RequireDag{
                 for varmer in graph[&hits[i].varmer.seq_vec].in_varmers.iter() {
                     if &**varmer == &hits[j].varmer.seq_vec {
                         inside = true;
                         break;
                     }
                 }
-            } else {
-                if hits[j].varmer.last_position < hits[i].varmer.first_position {
+            } else if require_dag == GraphConstraint::NoRequireDag {
+                if hits[j].varmer.last_position  < hits[i].varmer.first_position + k as u32{
                     inside = true;
                 }
+            }
+            else if require_dag == GraphConstraint::RequireDagRescue{
+                if graph[&hits[j].varmer.seq_vec].out_varmers.len() == 0 &&
+                 graph[&hits[i].varmer.seq_vec].in_varmers.len() == 0 {
+                    if hits[j].varmer.last_position < hits[i].varmer.first_position  + k as u32 {
+                        inside = true;
+                    }
+                 }
+                else{
+                    for varmer in graph[&hits[i].varmer.seq_vec].in_varmers.iter() {
+                        if &**varmer == &hits[j].varmer.seq_vec {
+                            inside = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            else{
+                panic!("Invalid graph constraint");
             }
 
             if !inside {
@@ -1032,32 +1212,29 @@ fn dp_hits<'a>(
                 }
             }
 
-            if varmer_d.last_position == 29 && varmer_d.first_position == 1 {
-                log::trace!(
-                    "TEST HIT HIT j: {:?} best_index {} new scores {:?}, bad {}, score {}, INSIDE {}",
-                    hits[j].varmer.seq_vec,
-                    best_index,
-                    best_score,
-                    bad,
-                    score,
-                    inside
-                );
-            }
-
+//            if varmer_d.last_position == 142 && varmer_d.first_position == 1 {
+//                log::trace!(
+//                    "TEST HIT HIT j: {:?} best_index {} new scores {:?}, bad {}, score {}, INSIDE {}",
+//                    hits[j].varmer.seq_vec,
+//                    best_index,
+//                    best_score,
+//                    bad,
+//                    score,
+//                    inside
+//                );
+//            }
+//
             if bad + rtoa_vecs[j].len() + ator_vecs[j].len() + del_vecs[j].len() <= threshold {
                 let put_score = score as f64 + mismatch_pen * bad as f64 + dp_vec[j].0;
-                if best_score < put_score {
+                if best_score < put_score || (best_score == put_score && cov_j > hits[best_index].varmer.cov) {
                     best_index = j;
                     best_score = put_score;
                     last_tied = false;
-                } else if best_score == put_score && !ambiguous_allowed {
-                    best_index = i;
-                    last_tied = true;
-                }
+                } 
             }
         }
-        if varmer_d.last_position == 29 && varmer_d.first_position == 1 {
-            log::trace!("best_index {}, i {}", best_index, i);
+        if varmer_d.last_position == 60 && varmer_d.first_position == 38 {
+            log::trace!("best_index {}, i {}, score,cov {} {} ", best_index, i, best_score, dp_vec[best_index].1);
         }
 
         let j = best_index;
@@ -1082,13 +1259,18 @@ fn dp_hits<'a>(
         .enumerate()
         .map(|(i, x)| (x.0, x.1, i))
         .collect::<Vec<(f64, u64, usize)>>();
-    score_vec.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+    score_vec.sort_by(|a, b| b.partial_cmp(&a).unwrap());
     let max_index = score_vec[0].2;
     let max_score = (score_vec[0].0, score_vec[0].1);
 
     //When mapping reads, don't allow ambiguous paths.
     if !ambiguous_allowed {
         if score_vec.len() > 1 && score_vec[1].0 == max_score.0 {
+            log::trace!("AMBIGUOUS PATHS. MAX SCORES and INDICES ARE");
+            for i in 0..score_vec.len().min(5){
+                log::trace!("{}: {} {}", i, score_vec[i].0, score_vec[i].2);
+                print_varmer_d(hits[score_vec[i].2].varmer, true);
+            }
             return empty_result;
         }
     }
@@ -1182,6 +1364,9 @@ pub fn query_unitigs(unitigs: &FxHashMap<VarMer, DBGInfo>, threshold: usize) -> 
         });
     }
 
+    dict_unitigs.sort_by(|a, b| a.cov.cmp(&b.cov));  
+
+    let mut failed_unitigs = FxHashSet::default();
     for unitig1 in dict_unitigs.iter() {
         let hits = get_hits(unitig1, &dict_unitigs, threshold, usize::MAX/2, false);
 
@@ -1200,8 +1385,10 @@ pub fn query_unitigs(unitigs: &FxHashMap<VarMer, DBGInfo>, threshold: usize) -> 
             0.2,
             true,
             true,
-            true,
+            GraphConstraint::RequireDag,
             usize::MAX,
+            0,
+            &failed_unitigs
         );
 
         if dp_res.total_errs > threshold {
@@ -1270,44 +1457,33 @@ pub fn query_unitigs(unitigs: &FxHashMap<VarMer, DBGInfo>, threshold: usize) -> 
         }
         log::trace!("QUERY UNITIGS: FINAL COV: {}, contig_COV {}", final_cov, unitig1.cov);
 
-        if dp_res.dels_max.len() > 0 {
+        let mut failed = false;
+        let num_errs = dp_res.total_errs as f64;
+
+        let mult;
+        if dp_res.rtoa_max.len() == 0 && dp_res.ator_max.len() == 0 {
+            mult = 0.35.powi(dp_res.dels_max.len() as i32);
+        } else {
+            mult = 0.15.powi(dp_res.rtoa_max.len() as i32) * 0.10.powi(dp_res.ator_max.len() as i32);
+        }
+
+        if num_errs > 0.{
             if binomial_test(
                 final_cov as u64,
                 unitig1.cov as u64,
-                0.50_f64.powi(threshold as i32),
+                mult,
             ) > 0.005
             {
-                bad_unitigs.push(unitig1.seq_vec.clone());
-                log::trace!("BAD DEL: {}", final_cov);
+                failed = true;
+                log::trace!("BAD ERR: {}", final_cov);
                 print_varmer_d(unitig1, true);
                 print_varmer_d(hits[dp_res.max_index].varmer, true);
             }
         }
-        if dp_res.rtoa_max.len() > 0 {
-            if binomial_test(
-                final_cov as u64,
-                unitig1.cov as u64,
-                0.15_f64.powi(threshold as i32),
-            ) > 0.005
-            {
-                bad_unitigs.push(unitig1.seq_vec.clone());
-                log::trace!("BAD RTOA: {}", final_cov);
-                print_varmer_d(unitig1, true);
-                print_varmer_d(hits[dp_res.max_index].varmer, true);
-            }
-        }
-        if dp_res.ator_max.len() > 0 {
-            if binomial_test(
-                final_cov as u64,
-                unitig1.cov as u64,
-                0.10_f64.powi(threshold as i32),
-            ) > 0.005
-            {
-                bad_unitigs.push(unitig1.seq_vec.clone());
-                log::trace!("BAD ATOR: {}", final_cov);
-                print_varmer_d(unitig1, true);
-                print_varmer_d(hits[dp_res.max_index].varmer, true);
-            }
+
+        if failed {
+            failed_unitigs.insert(&unitig1.seq_vec);
+            bad_unitigs.push(unitig1.seq_vec.clone());
         }
     }
     return bad_unitigs;
@@ -1375,6 +1551,7 @@ fn get_path_haps<'a>(
         log::trace!("GETTING PATH HAP: {}", s);
         for (varmer, _) in path.iter() {
             print_varmer(varmer, true);
+            log::trace!("COV: {}", final_unitigs[*varmer].coverage);
         }
         let path_frag = DictFrag {
             seq: seq.iter().cloned().collect::<FxHashMap<u32, u8>>(),
@@ -1399,7 +1576,7 @@ fn get_path_haps<'a>(
         final_results.push(final_res);
     }
 
-    reassign_frags(dbg_frags, &mut final_results);
+    reassign_frags(dbg_frags, &mut final_results, false);
     //print relative percentage
     let total_cov = final_results
         .iter()
@@ -1408,34 +1585,52 @@ fn get_path_haps<'a>(
             acc + assignment.iter().fold(0, |acc, frag| acc + frag.seq.len())
         });
 
-    for i in 0..final_results.len() {
+    let mut ret_results = vec![];
+    for (i,mut final_res) in final_results.into_iter().enumerate(){
         let mut relative_cov = 0;
         let mut depth = 0;
-        for frag in final_results[i].assigned_frags.iter() {
+        for frag in final_res.assigned_frags.iter() {
             relative_cov += frag.seq.len();
-            depth += frag.seq.len().min(final_results[i].path_frag.seq.len());
+            depth += frag.seq.len().min(final_res.path_frag.seq.len());
         }
+
+        let abundance = relative_cov as f64 / total_cov as f64 * 100.;
+        let depth = depth as f64 / final_res.path_frag.seq.len() as f64;
+
         log::debug!(
             "PATH: {}, COV: {}, RELATIVE COV: {}",
             i,
-            depth as f64 / final_results[i].path_frag.seq.len() as f64,
-            relative_cov as f64 / total_cov as f64
+            depth,
+            abundance
         );
-        final_results[i].depth = depth as f64 / final_results[i].path_frag.seq.len() as f64;
-        final_results[i].relative_abundances = relative_cov as f64 / total_cov as f64 * 100.;
+
+        final_res.depth = depth;
+        final_res.relative_abundances = abundance;
+
+        if abundance > options.min_abund && depth > 1. {
+            ret_results.push(final_res);
+        }
+
     }
 
-    return final_results;
+    return ret_results;
 }
 
-fn reassign_frags<'a>(dbg_frags: &'a Vec<FragDBG>, final_results: &mut Vec<HapFinalResult<'a>>) {
+fn reassign_frags<'a>(dbg_frags: &'a Vec<FragDBG>, final_results: &mut Vec<HapFinalResult<'a>>, assign_ambiguous: bool) -> Vec<&'a FragDBG>{
     let mut assignments = vec![vec![]; final_results.len()];
+    let mut unassignable = vec![];
     let seq_lens = final_results
         .iter()
         .map(|x| x.path_frag.seq.len())
         .collect::<Vec<usize>>();
+    let seq_covs = final_results
+        .iter()
+        .map(|x| x.relative_abundances)
+        .collect::<Vec<f64>>();
+
 
     for frag in dbg_frags {
+        let mut ambig = false;
         let mut best_score = 0;
         let mut best_index = 0;
         for (i, res) in final_results.iter_mut().enumerate() {
@@ -1454,13 +1649,20 @@ fn reassign_frags<'a>(dbg_frags: &'a Vec<FragDBG>, final_results: &mut Vec<HapFi
             if score > best_score {
                 best_score = score;
                 best_index = i;
+                ambig = false;
             } else if score == best_score {
-                if res.path_frag.seq.len() > seq_lens[best_index] {
+                ambig = true;
+                if res.path_frag.seq.len() as f64 * seq_covs[i] > seq_lens[best_index] as f64 * seq_covs[best_index] {
                     best_index = i;
                 }
             }
         }
         if best_score == 0 {
+            unassignable.push(frag);
+            continue;
+        }
+        if ambig && !assign_ambiguous {
+            unassignable.push(frag);
             continue;
         }
 
@@ -1469,6 +1671,7 @@ fn reassign_frags<'a>(dbg_frags: &'a Vec<FragDBG>, final_results: &mut Vec<HapFi
     for (i, assignment) in assignments.into_iter().enumerate() {
         final_results[i].assigned_frags = assignment;
     }
+    return unassignable;
 }
 
 fn print_final_hap_results(
@@ -1479,6 +1682,7 @@ fn print_final_hap_results(
     id_file: &str,
     fasta_file: &str,
     contig_name: &str,
+    unassigned: Option<&Vec<&FragDBG>>,
 ) {
     //prepend outdir_dir
     let dir = Path::new(&options.output_dir);
@@ -1525,18 +1729,10 @@ fn print_final_hap_results(
     }
 
     for (i, res) in final_results.iter().enumerate() {
-        if res.relative_abundances < options.min_abund {
-            log::debug!("Haplotype {} has relative abundance of {} which is less than the minimum abundance of {}. Skipping", i, res.relative_abundances, options.min_abund);
-            continue;
-        }
-        if res.depth < options.min_cov {
-            log::debug!("Haplotype {} has average coverage depth of {}x which is less than the minimum depth of {}x. Skipping", i, res.depth, options.min_cov);
-            continue;
-        }
         haplotype_writer
             .write_all(
                 format!(
-                    "Contig-{}\tHaplotype-{}\tAbundance-{:.2}\tDepth-{:.2}\n",
+                    ">Contig-{}\tHaplotype-{}\tAbundance-{:.2}\tDepth-{:.2}\n",
                     contig_name, i, res.relative_abundances, res.depth
                 )
                 .as_bytes(),
@@ -1580,6 +1776,15 @@ fn print_final_hap_results(
             let rec_str = format!(">contig:{}_hap:{}_read:{}\n", contig_name, i, j);
             fasta_writer.write_all(rec_str.as_bytes()).unwrap();
             fasta_writer.write_all(seq).unwrap();
+            fasta_writer.write_all(b"\n").unwrap();
+        }
+    }
+
+    if let Some(unassigned) = unassigned {
+        id_writer.write_all(format!("Contig-{}\tHaplotype-unassigned\t", contig_name).as_bytes()).unwrap();
+        for frag in unassigned.iter() {
+            id_writer.write_all(frag.id.as_bytes()).unwrap();
+            id_writer.write_all(b"\t").unwrap();
         }
     }
 }
@@ -1676,8 +1881,14 @@ fn get_outside_paths_and_integers(
 
     let unitig_paths = unitig_paths
         .iter()
-        .filter(|x| x.varmers.len() > 1)
+        .filter(|x| x.varmers.len() > 0)
         .collect::<Vec<&VarmerPath>>();
+    for path in unitig_paths.iter() {
+        log::trace!("UNITIG PATH: COV {}", path.total_avg_cov);
+        for varmer in path.varmers.iter() {
+            print_varmer_d(varmer, true);
+        }
+    }
     type Iv<'a> = Interval<u32, usize>;
     let data = unitig_paths
         .iter().enumerate()
@@ -1769,7 +1980,7 @@ fn get_outside_paths_and_integers(
         let integer_node = path
             .varmers
             .iter()
-            .map(|varmer| (0, *dict_frag_to_index.get(varmer).unwrap() as u8))
+            .map(|varmer| (*dict_frag_to_index.get(varmer).unwrap() as u32, *dict_frag_to_index.get(varmer).unwrap() as u8))
             .collect::<Vec<(u32, u8)>>();
         let integer_path = VarmerPathInteger {
             first: path.first,
@@ -1824,4 +2035,139 @@ fn get_assembly_integer_graph(
         }
     }
     return assembly_graph;
+}
+
+fn subsample_positions_fragdbg(
+    fragdbg: &mut Vec<FragDBG>,
+    positions: &FxHashSet<u32>,
+    old_pos_to_index_map: &FxHashMap<u32, u32>,
+    old_snp_pos_to_gn_pos: &Vec<usize>
+) -> Vec<usize>{
+    for frag in fragdbg.iter_mut(){
+        let mut new_seq = vec![];
+        let mut new_seq_dict = FxHashMap::default();
+        let mut new_snp_pos_to_seq_pos = FxHashMap::default();
+        let mut new_qual_dict = FxHashMap::default();
+
+        for (pos, geno) in frag.seq.iter() {
+            if positions.contains(pos) {
+                let new_pos = *old_pos_to_index_map.get(pos).unwrap();
+                new_seq.push((new_pos, *geno));
+                new_seq_dict.insert(new_pos, *geno);
+                new_snp_pos_to_seq_pos.insert(new_pos, frag.snp_pos_to_seq_pos[pos]);
+                new_qual_dict.insert(new_pos, frag.qual_dict[pos]);
+            }
+        }
+
+        let new_first_pos;
+        let new_last_pos;
+        if new_seq.len() > 0 {
+            new_first_pos = new_seq.first().unwrap().0;
+            new_last_pos = new_seq.last().unwrap().0;
+        }
+        else{
+            new_first_pos = 0;
+            new_last_pos = 0;
+        }
+
+        frag.seq = new_seq;
+        frag.seq_dict = new_seq_dict;
+        frag.qual_dict = new_qual_dict;
+        frag.snp_pos_to_seq_pos = new_snp_pos_to_seq_pos;
+        frag.first_position = new_first_pos;
+        frag.last_position = new_last_pos;
+    }
+    let mut new_snp_pos_to_gn_pos = vec![];
+    for (i, pos) in old_snp_pos_to_gn_pos.iter().enumerate(){
+        if positions.contains(&(i as u32 + 1)){
+            new_snp_pos_to_gn_pos.push(*pos);
+        }
+    }
+
+    return new_snp_pos_to_gn_pos
+}
+
+fn remove_tips(
+    unitigs: &FxHashMap<VarMer, DBGInfo>,
+    options: &Options,
+    k: usize,
+) -> Vec<VarMer> {
+
+    let mut bad_unitigs = vec![];
+    //Prev-tip
+    for varmer in unitigs.keys(){
+        let into = &unitigs[varmer].in_varmers;
+        let out = &unitigs[varmer].out_varmers;
+        let cov = unitigs[varmer].coverage;
+        if into.len() == 0 && out.len() == 1{
+            let test_cov = unitigs[out[0].as_ref()].coverage;
+            //only goes 1 k-mer back
+            if varmer[0].0 + k as u32 > out[0][0].0{
+                if binomial_test(test_cov, cov, 0.10) > 0.005{
+                    bad_unitigs.push(varmer.clone());
+                }
+            }
+        }
+        if into.len() == 1 && out.len() == 0{
+            let test_cov = unitigs[into[0].as_ref()].coverage;
+            // only goes 1 k-mer forward
+            if varmer.last().unwrap().0 < into[0].last().unwrap().0 + k as u32{
+                if binomial_test(test_cov, cov, 0.10) > 0.005{
+                    bad_unitigs.push(varmer.clone());
+                }
+            }
+        }
+    }
+
+    for bad_unitig in bad_unitigs.iter(){
+        log::trace!("REMOVED TIP");
+        print_varmer(bad_unitig, true);
+    }
+
+    return bad_unitigs;
+}
+   
+fn strand_bias_filter(dbg_frags: &mut Vec<FragDBG>, options: &Options, num_snps: usize, snp_pos_to_gn: &Vec<usize>) -> Vec<usize>{
+    let mut pvalues = vec![];
+    let mut snps_to_4_table: Vec<[u32;4]> = vec![[0; 4]; num_snps];
+    for frag in dbg_frags.iter() {
+        let ind;
+        if frag.forward_strand{
+            ind = 0
+        }
+        else{
+            ind = 2
+        }
+        for (snp_pos,geno) in frag.seq.iter() {
+            let mut geno = *geno as usize;
+            if geno > 1{
+                geno = 1;
+            }
+            snps_to_4_table[(*snp_pos - 1) as usize][geno + ind] += 1; 
+        }
+    }
+    for (snp, table) in snps_to_4_table.iter().enumerate(){
+        let p = fishers_exact(table).unwrap().two_tail_pvalue;
+        pvalues.push((p, snp));
+    }
+
+    pvalues.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+    let mut good_snps = FxHashSet::default();
+
+    for i in 0..pvalues.len(){
+        if pvalues[i].0 < options.strand_bias_fdr * (i as f64) / (pvalues.len() as f64){
+            for j in i..pvalues.len(){
+                log::trace!("THRESHOLD STRAND BIAS SNP {} : {}", pvalues[j].1 + 1, pvalues[j].0);
+            }
+            break;
+        }
+        else{
+            good_snps.insert((pvalues[i].1 + 1) as u32);
+        }
+    }
+
+    let old_pos_to_new_pos_map = (1..=num_snps).filter(|x| good_snps.contains(&(*x as u32))).enumerate().map(|(i, x)| (x as u32, i as u32 + 1)).collect::<FxHashMap<u32, u32>>();
+    log::trace!("GOOD SNPS: {:?}", good_snps);
+
+    subsample_positions_fragdbg(dbg_frags, &good_snps, &old_pos_to_new_pos_map, snp_pos_to_gn)
 }

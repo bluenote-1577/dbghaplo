@@ -2,6 +2,7 @@ extern crate time;
 use clap::Parser;
 use dbghap::file_reader;
 use dbghap::dbg;
+use dbghap::consensus;
 use dbghap::parse_cmd_line;
 use dbghap::utils_frags;
 use std::fs;
@@ -18,8 +19,12 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[allow(deprecated)]
 fn main() {
     #![allow(warnings)]
-
     let options = parse_cmd_line::Options::parse();
+    //set threads
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(options.num_threads)
+        .build_global()
+        .unwrap();
     if options.trace {
         simple_logger::SimpleLogger::new()
             .with_level(log::LevelFilter::Trace)
@@ -72,7 +77,6 @@ fn main() {
     let mut chrom_seqs = None;
 
     let vcf_profile = file_reader::get_vcf_profile(&options.vcf_file, &contigs_to_phase);
-    let snp_to_genome_pos_map = file_reader::get_genotypes_from_vcf_hts(options.vcf_file.clone());
     log::debug!("Read VCF successfully.");
     if options.reference_fasta != "" {
         chrom_seqs = Some(file_reader::get_fasta_seqs(&options.reference_fasta));
@@ -115,16 +119,16 @@ fn main() {
             &mut chrom_seqs,
             &contig,
         );
+
         log::debug!("Number of reads passing filtering: {}", all_frags.len());
         if all_frags.len() == 0 {
             log::debug!("Contig {} has no fragments", contig);
             continue;
         }
 
-        if snp_to_genome_pos_map.contains_key(contig) {
+        if vcf_profile.vcf_snp_pos_to_gn_pos_map.contains_key(contig.as_str()) {
             
-            let snp_to_genome_pos: &Vec<usize>;
-            snp_to_genome_pos = snp_to_genome_pos_map.get(contig).unwrap();
+            let snp_to_genome_pos = &vcf_profile.vcf_snp_pos_to_gn_pos_map[contig.as_str()];
 
             all_frags.sort();
             for (i, frag) in all_frags.iter_mut().enumerate() {
@@ -133,7 +137,7 @@ fn main() {
 
             //Get last SNP on the genome covered over all fragments.
             let length_gn = utils_frags::get_length_gn(&all_frags);
-            log::debug!("Contig {} has {} SNPs", contig, length_gn);
+            log::info!("Contig {} has {} SNPs", contig, length_gn);
 
             let mut final_frags;
             final_frags = all_frags;
@@ -145,7 +149,18 @@ fn main() {
                 Instant::now() - start_t
             );
 
-            dbg::construct_dbg(&dbg_frags, &options, &snp_to_genome_pos, &contig);
+            let final_partitions = dbg::dbghap_run(dbg_frags, &options, &snp_to_genome_pos, &contig);
+
+            if let Some(final_partitions) = final_partitions {
+                consensus::simple_consensus(
+                    &mut main_bam,
+                    &mut chrom_seqs, 
+                    &contig,
+                    &final_partitions,
+                    &options,
+                    &vcf_profile,
+                );
+            }
         }
     }
     log::info!("Total time taken is {:?}", Instant::now() - start_t_initial);
