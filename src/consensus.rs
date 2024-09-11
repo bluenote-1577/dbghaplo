@@ -46,7 +46,6 @@ pub fn simple_consensus(
             if record.is_secondary(){
                 continue;
             }
-            log::trace!("Record {} Flag {}", String::from_utf8_lossy(record.qname()), record.flags());
             for aligned_pairs in record.aligned_pairs(){
                 let ref_pos = aligned_pairs[1];
                 let pos = aligned_pairs[0];

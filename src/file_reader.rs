@@ -297,6 +297,7 @@ pub fn get_vcf_profile<'a>(vcf_file: &str, ref_chroms: &'a Vec<String>) -> VcfPr
             debug!("VCF : Variant at position {} is too close to previous variant. Ignoring.", unr.pos());
             continue;
         }
+
         curr_pos = unr.pos();
 
         snp_pos_to_gn_pos_map.push(unr.pos() as GnPosition);

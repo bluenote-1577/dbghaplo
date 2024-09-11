@@ -127,7 +127,7 @@ pub fn dbghap_run(
     );
     log::debug!("Minimum coverage for global filter is : {:?}", min_cov);
 
-    let mut dbg = filter_dbg(dbg, Some(min_cov), None, k);
+    let mut dbg = filter_dbg(dbg, Some(min_cov), None, k, false, num_snps);
     print_dbg(&dbg, "dbg.dot");
 
     let mut uni = get_unitigs(&dbg, k, false);
@@ -140,29 +140,42 @@ pub fn dbghap_run(
     }
     print_dbg(&uni, "unitigs.dot");
 
-    let tips = remove_tips(&uni, options, k + end);
-    uni = filter_dbg(uni, None, Some(tips), k + end);
-    print_dbg(&uni, "tips_removed.dot");
-    uni = get_unitigs(&uni, k + end, true);
-    print_dbg(&uni, "tips_unitigs.dot");
+
+    //Remove tips
+    for _ in 0..2{
+        let tips = remove_tips(&uni, options, k + end);
+        uni = filter_dbg(uni, None, Some(tips), k + end, false, num_snps);
+        print_dbg(&uni, "tips_removed.dot");
+        uni = get_unitigs(&uni, k + end, true);
+        print_dbg(&uni, "tips_unitigs.dot");
+    }
 
     //Unitigging
     let unitigs = uni;
 
+    //Query and clean
     log::debug!("Cleaning unitigs");
     let mut final_unitigs = unitigs;
     for i in 1..3 {
         let bad_unitigs = query_unitigs(&final_unitigs, i);
         log::debug!("Number of bad unitigs {}", bad_unitigs.len());
-        let filtered_unitigs = filter_dbg(final_unitigs, None, Some(bad_unitigs), k + end);
+        let filtered_unitigs = filter_dbg(final_unitigs, None, Some(bad_unitigs), k + end, false, num_snps);
         print_dbg(&filtered_unitigs, format!("clean_dbg_{}.dot", i).as_str());
         final_unitigs = get_unitigs(&filtered_unitigs, k + end, true);
         print_dbg(&final_unitigs, format!("clean_unitigs_{}.dot", i).as_str());
     }
 
+    //Remove tips again
     let tips = remove_tips(&final_unitigs, options, k + end);
-    final_unitigs = filter_dbg(final_unitigs, None, Some(tips), k + end);
+    final_unitigs = filter_dbg(final_unitigs, None, Some(tips), k + end, false, num_snps);
     print_dbg(&final_unitigs, "tips_removed_round2.dot");
+    final_unitigs = get_unitigs(&final_unitigs, k + end, true);
+
+    
+    //Remove small disconnected components that have length < 1.5 * k and coverage < mean_cov / 100
+    let min_cov_small_disconnected = total_cov / (num_snps as u64 - k as u64 + 1) / (coverage_divider / 4);
+    log::trace!("Second round min cov :{}", min_cov_small_disconnected);
+    final_unitigs = filter_dbg(final_unitigs, Some(min_cov_small_disconnected), None, k + end, true, num_snps);
     final_unitigs = get_unitigs(&final_unitigs, k + end, true);
 
     let final_unitigs = clean_hanging_kmers(final_unitigs, k + end - 1);
@@ -202,11 +215,11 @@ pub fn dbghap_run(
             &dict_frag,
             &final_unitigs,
             10000,
-            -1.0,
+            -3.0,
             false,
             false,
             GraphConstraint::RequireDagRescue,
-            100,
+            1000,
             k,
             &FxHashSet::default()
         );
@@ -816,6 +829,8 @@ fn filter_dbg(
     min_cov: Option<u64>,
     bad_nodes: Option<Vec<VarMer>>,
     k: usize,
+    only_disconnected_small: bool,
+    num_snps : usize,
 ) -> FxHashMap<VarMer, DBGInfo> {
     let mut new_dbg = FxHashMap::default();
     for (node, info) in dbg.iter() {
@@ -825,7 +840,13 @@ fn filter_dbg(
             }
         }
         if let Some(min_cov) = min_cov {
-            if info.coverage <= min_cov {
+            if only_disconnected_small{
+                if info.coverage < min_cov && info.in_varmers.len() == 0 && info.out_varmers.len() == 0 && node.len() < num_snps / 2{
+                    continue;
+                }
+                
+            }
+            else if info.coverage <= min_cov {
                 continue;
             }
         }
@@ -1123,6 +1144,7 @@ fn dp_hits<'a>(
         .iter()
         .map(|x| x.del.clone())
         .collect::<Vec<FxHashSet<u32>>>();
+    let mut chain_length = vec![1; hits.len()];
 
     for i in 0..hits.len() {
         if forbidden_nodes.contains(&hits[i].varmer.seq_vec) {
@@ -1133,13 +1155,14 @@ fn dp_hits<'a>(
         let mut best_score = 0.;
         let mut last_tied = false;
 
-        if varmer_d.last_position == 142 && varmer_d.first_position == 1 {
+        if varmer_d.last_position == 234 && varmer_d.first_position == 210 {
             let hit = &hits[i];
             log::trace!(
-                "TEST HIT HIT: {:?}, score {}, bad {}",
+                "TEST HIT HIT: {:?}, score {}, bad {}, cov {}",
                 hit.varmer.seq_vec,
                 hit.same.len(),
-                hit.r_to_a.len() + hit.a_to_r.len() + hit.del.len()
+                hit.r_to_a.len() + hit.a_to_r.len() + hit.del.len(),
+                dp_vec[i].1
             );
         }
 
@@ -1242,6 +1265,7 @@ fn dp_hits<'a>(
             continue;
         }
         traceback_vec[i] = j;
+        chain_length[i] = chain_length[j] + 1;
         rtoa_vecs[i] = rtoa_vecs[i].union(&rtoa_vecs[j]).cloned().collect();
         ator_vecs[i] = ator_vecs[i].union(&ator_vecs[j]).cloned().collect();
         del_vecs[i] = del_vecs[i].union(&del_vecs[j]).cloned().collect();
@@ -1249,7 +1273,7 @@ fn dp_hits<'a>(
         //            ator_vecs[i] = ator_vecs[i].union(&hits[j].3).cloned().collect();
         //            del_vecs[i] = del_vecs[i].union(&hits[j].4).cloned().collect();
         //            same_vecs[i] = same_vecs[i].union(&hits[j].1).cloned().collect();
-        dp_vec[i] = (best_score, dp_vec[i].1 + dp_vec[j].1);
+        dp_vec[i] = (best_score, ((dp_vec[i].1 * chain_length[i] - 1) + dp_vec[j].1) / chain_length[i]);
     }
 
     //get traceback with max score
@@ -1464,7 +1488,8 @@ pub fn query_unitigs(unitigs: &FxHashMap<VarMer, DBGInfo>, threshold: usize) -> 
         if dp_res.rtoa_max.len() == 0 && dp_res.ator_max.len() == 0 {
             mult = 0.35.powi(dp_res.dels_max.len() as i32);
         } else {
-            mult = 0.15.powi(dp_res.rtoa_max.len() as i32) * 0.10.powi(dp_res.ator_max.len() as i32);
+            mult = 0.15.powi(dp_res.rtoa_max.len() as i32)
+                * 0.10.powi(dp_res.ator_max.len() as i32);
         }
 
         if num_errs > 0.{
@@ -2006,6 +2031,12 @@ fn get_assembly_integer_graph(
                 in_varmers: vec![],
                 coverage: path1.total_avg_cov,
             });
+        log::trace!("INTEGER PATH - FIRST {}, LAST {}, total_avg_cov {}", path1.first, path1.last, path1.total_avg_cov);
+        let mut string = String::new();
+        for integer in path1.intver.iter() {
+            string.push_str(&format!(" -> {}", integer.0));
+        }
+        log::trace!("{}", string);
     }
     let data = integer_paths
         .iter().enumerate()
@@ -2026,7 +2057,7 @@ fn get_assembly_integer_graph(
                     break;
                 }
             }
-            if overlap_len > 1 {
+            if overlap_len > 0 {
                 let info1 = assembly_graph.get_mut(&path1.intver).unwrap();
                 info1.out_varmers.push(Arc::new(path2.intver.clone()));
                 let info2 = assembly_graph.get_mut(&path2.intver).unwrap();
