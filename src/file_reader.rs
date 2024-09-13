@@ -392,7 +392,7 @@ pub fn get_frags_from_bamvcf_rewrite(
                             frag_from_record(&record, snp_positions_contig, pos_allele_map, count);
 
 //                        if frag.seq_dict.keys().len() > 0 {
-                        if !chrom_seqs.is_none() && options.realign {
+                        if !chrom_seqs.is_none() && !options.no_realign {
                             alignment::realign(
                                 &seq,
                                 &mut frag,

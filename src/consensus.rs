@@ -42,6 +42,9 @@ pub fn simple_consensus(
         let mut min_pos = std::i64::MAX;
         let mut max_pos = std::i64::MIN;
         log::trace!("Processing partition with {} reads", part.len());
+        if part.len() == 0{
+            continue;
+        }
         for record in part.iter(){
             if record.is_secondary(){
                 continue;
@@ -98,7 +101,7 @@ pub fn simple_consensus(
     }
     //write consensus strings to file
     //consensus file goes to options.output_dir/consensus.fasta
-    let consensus_file = format!("{}/consensus.fasta", options.output_dir);
+    let consensus_file = format!("{}/majority_vote_haplotypes.fasta", options.output_dir);
     let bufwriter = BufWriter::new(std::fs::File::create(consensus_file).unwrap());
     let mut consensus_writer = bio::io::fasta::Writer::from_bufwriter(bufwriter);
     for (i, consensus_string) in consensus_strings.iter().enumerate(){

@@ -23,7 +23,6 @@ pub fn dbghap_run(
     contig_name: &str,
 ) -> Option<Vec<HapFinalResultString>> {
     let k;
-    let end;
     let mut thirty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.33);
     let mut fifty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.5);
     let max_k_preset;
@@ -55,12 +54,6 @@ pub fn dbghap_run(
             coverage_divider = 400;
             max_median = 500;
             resolution = 0.001;
-        }
-        parse_cmd_line::Preset::Illumina => {
-            max_k_preset = 50;
-            coverage_divider = 400;
-            max_median = 200;
-            resolution = 0.005;
         }
     }
 
@@ -102,20 +95,15 @@ pub fn dbghap_run(
     let snp_pos_to_genome_pos_new = strand_bias_filter(&mut dbg_frags, options, num_snps, &snp_pos_to_genome_pos_new);
     let num_snps = snp_pos_to_genome_pos_new.len();
 
-    if let Some(min_k) = options.min_k {
-        k = min_k;
+    if let Some(opt_k) = options.k {
+        k = opt_k;
     } else {
         k = thirty.min(num_snps * 7 / 10).min(max_k_preset).max(1);
     }
-    if let Some(end_k) = options.max_k {
-        end = end_k;
-    } else {
-        end = (fifty).min(num_snps * 8 / 10).min(max_k_preset).max(k);
-    }
 
     //disable this for now
+    log::trace!("Start k: {}", k);
     let end = 0;
-    log::trace!("Start k: {}, end k: {}", k, end);
 
     let dbg = dbg_from_frags(&dbg_frags, k, None, None, None);
     log::debug!("Constructed DBG for k = {}", k);
@@ -311,9 +299,9 @@ pub fn dbghap_run(
         &hap_path_results,
         num_snps,
         options,
-        "hap_before.txt",
-        "id_before.txt",
-        "reads_before.fa",
+        "intermediate/hap_before.txt",
+        "intermediate/id_before.txt",
+        None, 
         contig_name,
         None,
     );
@@ -327,7 +315,7 @@ pub fn dbghap_run(
             num_snps,
             &snp_pos_to_genome_pos_new,
             &dbg_frags,
-            &format!("consensus-{}.txt", j),
+            &format!("intermediate/hap_info-{}.txt", j),
             options,
             contig_name,
             false,
@@ -338,9 +326,9 @@ pub fn dbghap_run(
             &final_results_consensus,
             num_snps,
             options,
-            format!("haplotypes-{}.txt", j).as_str(),
-            format!("ids-{}.txt", j).as_str(),
-            format!("reads-{}.fa", j).as_str(),
+            format!("intermediate/haplotypes-{}.fasta", j).as_str(),
+            format!("intermediate/ids-{}.txt", j).as_str(),
+            None,
             contig_name,
             None,
         );
@@ -361,7 +349,7 @@ pub fn dbghap_run(
                 num_snps,
                 &snp_pos_to_genome_pos_new,
                 &dbg_frags,
-                &format!("consensus-semi.txt"),
+                &format!("intermediate/hap_info-semi.txt"),
                 options,
                 contig_name,
                 false,
@@ -370,13 +358,18 @@ pub fn dbghap_run(
 
             let final_results_filtered = filter_final_haplotypes(&final_results, options);
 
+            let output_reads = if options.output_reads {
+                Some("reads.fq")
+            } else {
+                None
+            };
             print_final_hap_results(
                 &final_results_filtered,
                 num_snps,
                 options,
-                "haplotypes.txt",
+                "haplotypes.fasta",
                 "ids.txt",
-                "reads.fa",
+                output_reads,
                 contig_name,
                 Some(&unassigned),
             );
@@ -387,7 +380,7 @@ pub fn dbghap_run(
                 num_snps,
                 &snp_pos_to_genome_pos_new,
                 &dbg_frags,
-                &format!("consensus-final.txt"),
+                &format!("hap_info.txt"),
                 options,
                 contig_name,
                 false,
@@ -493,7 +486,7 @@ fn consensus<'a>(
     consensus_file.write(b"\n").unwrap();
     for i in 1..snps + 1 {
         consensus_file
-            .write(format!("\t{}", snp_pos_to_genome_pos[i - 1]).as_bytes())
+            .write(format!("\t{}", snp_pos_to_genome_pos[i - 1] + 1).as_bytes())
             .unwrap();
         for j in 0..vec_haps.len() {
             if vec_haps[j].contains_key(&(i as u32)) {
@@ -644,6 +637,7 @@ pub fn frag_to_dbgfrag(frag: &Frag, options: &Options) -> FragDBG {
         seq,
         seq_dict: frag.seq_dict.clone(),
         seq_string: frag.seq_string.clone(),
+        qual_string: frag.qual_string.clone(),
         first_position,
         last_position,
         snp_pos_to_seq_pos: frag.snp_pos_to_seq_pos.clone(),
@@ -1705,7 +1699,7 @@ fn print_final_hap_results(
     options: &Options,
     hap_file: &str,
     id_file: &str,
-    fasta_file: &str,
+    fastq_file: Option<&str>,
     contig_name: &str,
     unassigned: Option<&Vec<&FragDBG>>,
 ) {
@@ -1715,11 +1709,9 @@ fn print_final_hap_results(
     let hap_file = hap_file.to_str().unwrap();
     let id_file = dir.join(id_file);
     let id_file = id_file.to_str().unwrap();
-    let fasta_file = dir.join(fasta_file);
-    let fasta_file = fasta_file.to_str().unwrap();
     let mut haplotype_writer;
     let mut id_writer;
-    let mut fasta_writer;
+    let mut fastq_writer = None;
     if Path::exists(Path::new(hap_file)) {
         haplotype_writer = BufWriter::new(
             std::fs::File::options()
@@ -1733,12 +1725,17 @@ fn print_final_hap_results(
                 .open(id_file)
                 .expect(&format!("Could not open id file {}", id_file)),
         );
-        fasta_writer = BufWriter::new(
-            std::fs::File::options()
-                .append(true)
-                .open(fasta_file)
-                .expect(&format!("Could not open fasta file {}", fasta_file)),
-        );
+        if let Some(fastq_file) = fastq_file {
+            let fastq_file = dir.join(fastq_file);
+            let fastq_file = fastq_file.to_str().unwrap();
+
+            fastq_writer = Some(BufWriter::new(
+                std::fs::File::options()
+                    .append(true)
+                    .open(fastq_file)
+                    .expect(&format!("Could not open fastq file {}", fastq_file)),
+            ));
+        }
     } else {
         haplotype_writer = BufWriter::new(
             std::fs::File::create(hap_file)
@@ -1747,17 +1744,22 @@ fn print_final_hap_results(
         id_writer = BufWriter::new(
             std::fs::File::create(id_file).expect(&format!("Could not create id file {}", id_file)),
         );
-        fasta_writer = BufWriter::new(
-            std::fs::File::create(fasta_file)
-                .expect(&format!("Could not create fasta file {}", fasta_file)),
-        );
+        if let Some(fastq_file) = fastq_file {
+            let fastq_file = dir.join(fastq_file);
+            let fastq_file = fastq_file.to_str().unwrap();
+
+            fastq_writer = Some(BufWriter::new(
+                std::fs::File::create(fastq_file)
+                    .expect(&format!("Could not create fastq file {}", fastq_file)),
+            ));
+        }
     }
 
     for (i, res) in final_results.iter().enumerate() {
         haplotype_writer
             .write_all(
                 format!(
-                    ">Contig-{}\tHaplotype-{}\tAbundance-{:.2}\tDepth-{:.2}\n",
+                    ">Contig:{}|Haplotype:{}|Abundance:{:.2}|Depth:{:.2}\n",
                     contig_name, i, res.relative_abundances, res.depth
                 )
                 .as_bytes(),
@@ -1780,7 +1782,7 @@ fn print_final_hap_results(
 
         //print ids to a file where each row is a path and each column is a frag id, tab sep
         id_writer
-            .write_all(format!("Contig-{}\tHaplotype-{}\t", contig_name, i).as_bytes())
+            .write_all(format!("Contig:{}\tHaplotype:{}\t", contig_name, i).as_bytes())
             .unwrap();
         for frag in res.assigned_frags.iter() {
             id_writer.write_all(frag.id.as_bytes()).unwrap();
@@ -1788,20 +1790,28 @@ fn print_final_hap_results(
         }
         id_writer.write_all(b"\n").unwrap();
 
-        //Write these seq strings to a fasta file, diff identifier
-        let haps = &res.assigned_frags;
-        let seqs = haps
+        //Write these seq strings to a fastq file, diff identifier
+        let reads = &res.assigned_frags;
+        let seqs = reads  
             .iter()
             .map(|frag| frag.seq_string[0].to_ascii_vec())
             .collect::<Vec<Vec<u8>>>();
-        for (j, seq) in seqs.iter().enumerate() {
-            if j != 0 && i != 0 {
-                fasta_writer.write_all(b"\n").unwrap();
+        if let Some(fastq_writer) = &mut fastq_writer {
+            for (j, seq) in seqs.iter().enumerate() {
+                if j != 0 && i != 0 {
+                    fastq_writer.write_all(b"\n").unwrap();
+                }
+                let rec_str = format!("@Contig:{}|Haplotype:{}|Read:{}\n", contig_name, i, reads[j].id);
+                fastq_writer.write_all(rec_str.as_bytes()).unwrap();
+                fastq_writer.write_all(seq).unwrap();
+                fastq_writer.write_all(b"\n+\n").unwrap();
+                if reads[j].qual_string[0].len() != reads[j].seq_string[0].len() {
+                    fastq_writer.write_all(&vec![b'I'; reads[j].seq_string[0].len()]).unwrap();
+                } else {
+                    fastq_writer.write_all(&reads[j].qual_string[0]).unwrap();
+                }
+                fastq_writer.write_all(b"\n").unwrap();
             }
-            let rec_str = format!(">contig:{}_hap:{}_read:{}\n", contig_name, i, j);
-            fasta_writer.write_all(rec_str.as_bytes()).unwrap();
-            fasta_writer.write_all(seq).unwrap();
-            fasta_writer.write_all(b"\n").unwrap();
         }
     }
 

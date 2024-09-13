@@ -63,7 +63,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    fs::create_dir_all(&contig_out_dir).unwrap();
+    fs::create_dir_all(&format!("{}/intermediate", contig_out_dir)).unwrap();
 
 
     let start_t_initial = Instant::now();

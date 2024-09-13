@@ -79,6 +79,7 @@ pub struct FragDBG {
     pub seq: Vec<(SnpPosition, Genotype)>,
     pub seq_dict: FxHashMap<SnpPosition, Genotype>,
     pub seq_string: Vec<DnaString>,
+    pub qual_string: Vec<Vec<u8>>,
     pub first_position: SnpPosition,
     pub last_position: SnpPosition,
     pub snp_pos_to_seq_pos: FxHashMap<SnpPosition, (u8, GnPosition)>,

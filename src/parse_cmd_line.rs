@@ -7,91 +7,115 @@ pub enum Preset{
     NanoporeR9,
     NanoporeR10,
     HiFi,
-    Illumina,
 }
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
-#[command(name = "dbghap", version, about = "Test", long_about = None)]
+#[command(name = "dbghap", version, about = "Long-read haplotyping for diverse small sequences (e.g. viruses, genes).", long_about = None)]
 pub struct Options{
-    /// Name of the person to greet
-    #[arg(short, long)]
-    pub bam_file: String,
 
-    #[arg(long="pe")]
-    pub paired_end: bool,
-
-    #[arg(short, long)]
-    pub vcf_file: String,
-
-    #[arg(short, long)]
-    pub reference_fasta: String,
-
-    #[arg(short, long, default_value = "dbghap_output")]
-    pub output_dir: String,
-
-    #[arg(short='S', long,value_delimiter = ',')]
-    pub sequences_to_phase: Option<Vec<String>>,
-
-    //TODO
-    #[arg(long)]
-    pub bed_file: Option<String>,
-
-    #[arg(long)]
-    pub dont_use_supp_aln: bool,
-
+    /// Number of threads to use.
     #[arg(short='t', long="threads", default_value_t = 10)]
     pub num_threads: usize,
 
-    #[arg(short='O',long)]
-    pub overwrite: bool,
-
-    #[arg(long)]
-    pub min_k: Option<usize>,
-
-    #[arg(long)]
-    pub max_k: Option<usize>,
-
-    #[arg(long, default_value_t = 5)]
-    pub mapq_cutoff: u8,
-
-    #[arg(long, default_value_t = 30)]
-    pub supp_mapq_cutoff: u8,
-
-    #[arg(long, default_value_t = 5000)]
-    pub supp_aln_dist_cutoff: i64,
-
-    #[arg(short, long, value_enum, default_value_t = Preset::NanoporeR9)]
+    /// Presets for different technologies. More accurate technologies use more aggressive
+    /// parameters.
+    #[arg(short, long, value_enum, default_value_t = Preset::NanoporeR9, help_heading = "PRESETS")]
     pub preset: Preset,
 
-    #[arg(long, default_value = "1")]
+
+    //heading = input?
+    /// Indexed bam file to phase.
+    #[arg(short, long, help_heading = "INPUT")]
+    pub bam_file: String,
+
+    /// VCF file with SNPs.
+    #[arg(short, long, help_heading = "INPUT")]
+    pub vcf_file: String,
+
+    /// Reference fasta file.
+    #[arg(short, long, help_heading = "INPUT")]
+    pub reference_fasta: String,
+
+    /// Output directory.
+    #[arg(short, long, default_value = "dbghap_output", help_heading = "OUTPUT")]
+    pub output_dir: String,
+
+    /// Sequences to phase separated by commas (e.g. NC_001802.1,NC_045512.2)
+    #[arg(short='S', long,value_delimiter = ',', help_heading = "INPUT")]
+    pub sequences_to_phase: Option<Vec<String>>,
+
+    ///TODO
+    #[arg(long, help_heading = "INPUT")]
+    pub bed_file: Option<String>,
+
+    /// Do not use supplementary alignments.
+    #[arg(long, help_heading = "OPTIONS")]
+    pub dont_use_supp_aln: bool,
+
+    /// Overwrite output directory if it exists.
+    #[arg(short='O',long, help_heading = "OUTPUT")]
+    pub overwrite: bool,
+
+    /// Output haplotype-tagged reads.
+    #[arg(long, help_heading = "OUTPUT")]
+    pub output_reads: bool,
+
+    /// Value of "k". Set automatically if not provided.
+    #[arg(short, help_heading = "ALGORITHM")]
+    pub k: Option<usize>,
+
+    /// Don't use primary mappings with < --mapq-cutoff.
+    #[arg(long, default_value_t = 5, help_heading = "OPTIONS")]
+    pub mapq_cutoff: u8,
+
+    /// Don't use supp. mappings with < --supp-mapq-cutoff.
+    #[arg(long, default_value_t = 30, help_heading = "OPTIONS")]
+    pub supp_mapq_cutoff: u8,
+
+    /// Require supplementary alignments to be within this distance of the primary alignment.
+    #[arg(long, default_value_t = 5000, help_heading = "OPTIONS")]
+    pub supp_aln_dist_cutoff: i64,
+
+    
+    /// Only phase contigs with > this # of SNPs.
+    #[arg(long, default_value = "1", help_heading = "OPTIONS")]
     pub snp_count_filter: usize,
 
+    /// Trace logging (VERY VERBOSE).
     #[arg(long)]
     pub trace: bool,
 
+    /// Debug logging.
     #[arg(long)]
     pub debug: bool,
 
-    #[arg(long, default_value_t = 0.25)]
+    /// Minimum abundance (in %) of a haplotype to be considered.
+    #[arg(long, default_value_t = 0.25, help_heading = "ALGORITHM")]
     pub min_abund: f64,
 
-    #[arg(long, default_value_t = 5.)]
+    /// Minimum coverage (depth) of a haplotype to be considered.
+    #[arg(long, default_value_t = 5., help_heading = "ALGORITHM")]
     pub min_cov: f64,
 
-    #[arg(long, default_value_t = 3)]
+    /// Minimum base quality to consider for fastq.
+    #[arg(long, default_value_t = 3, help_heading = "OPTIONS")]
     pub min_qual: u8,
 
-    #[arg(long, default_value_t = 1000000000000)]
+    /// Maximum number of alignments per contig.
+    #[arg(long, default_value_t = 1000000000000, help_heading = "OPTIONS")]
     pub max_frags: usize,
 
-    #[arg(long)]
-    pub realign: bool,
+    /// No base realignment against SNPs.
+    #[arg(long, help_heading = "OPTIONS")]
+    pub no_realign: bool,
 
-    #[arg(long)]
+    /// Merge haplotypes with < this fractional difference. Value depends on preset. 
+    #[arg(long, help_heading = "ALGORITHM")]
     pub resolution: Option<f64>,
 
-    #[arg(long, default_value_t = 0.005)]
+    /// FDR for strand bias filtering.
+    #[arg(long, default_value_t = 0.005, help_heading = "ALGORITHM")]
     pub strand_bias_fdr: f64
 }
 
@@ -110,7 +134,7 @@ pub struct Options{
 //            .unwrap();
 //    }
 //    else{
-//        simple_logger::SimpleLogger::new()
+//        simple_logger::::new()
 //            .with_level(log::LevelFilter::Info)
 //            .init()
 //            .unwrap();
