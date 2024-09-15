@@ -1,32 +1,8 @@
-# floria - metagenomic long or short-read strain haplotype phasing
+# dbghaplo - long-read haplotype phasing for diverse small sequences
 
 ## Introduction
 
-**Floria** is a software package for recovering microbial haplotypes and clustering reads at the strain level from metagenomic sequencing data. See [the introduction here](https://phase-doc.readthedocs.io/en/latest/introduction.html) for more information. 
-
-After calling SNPs against reference genomes __or__ a metagenomic assembly, floria produce strain-level clusters of short or long reads and their haplotypes **in minutes**. 
-
-<p align="center">
-  <img width="460" height="400" src="https://github.com/bluenote-1577/vartig-utils/blob/main/visualize-vartig-example.png", caption="asdf">
-</p>
-<p align="center">
-  <i>
-    A 1Mbp contig (Brevefilum fermentans) was automatically phased into two strains (top: y-axis is coverage). Only two strains are present with high HAPQ; spurious "haplosets" are given low HAPQ.
-  </i>
-</p>
-
 ### Inputs
-
-Floria requires: 
-
-1. a list of variants in .vcf format
-2. a set of reads mapped to assembled contigs/references in .bam format
-
-See the **"Floria-PL"** pipeline [here](https://github.com/jsgounot/Floria_analysis_workflow) for reads-to-haplotype pipelines if you do not know how to get started with generating VCFs or BAMs. 
-
-## Outputs, tutorials, and manuals (full documentation)
-
-See https://phase-doc.readthedocs.io/en/latest/index.html for more information on tutorials, outputs, and extra manuals for usage. 
 
 ## Install + Quick start 
 
@@ -78,18 +54,5 @@ chmod +x floria
 ### Quick Start after install 
 
 ```sh
-git clone https://github.com/bluenote-1577/floria
-cd floria
-
-# run floria on mock data
-floria -b tests/test_long.bam  -v tests/test.vcf  -r tests/MN-03.fa -o 3_klebsiella_strains
-ls 3_klebsiella_strains
-
-# visualize strain "vartigs" if you have matplotlib
-python scripts/visualize_vartigs.py 3_klebsiella_strains/NZ_CP081897.1/NZ_CP081897.1.vartigs
+dbghap -b mapped_reads.bam -r reference.fa -v variants.vcf
 ```
-
-## Citation
-\*Co-lead authors
-
-Jim Shaw\*, Jean-Sebastien Gounot\*, Hanrong Chen, Niranjan Nagarajan, Yun William Yu. Floria: Fast and accurate strain haplotyping in metagenomes (2024). bioRxiv.
