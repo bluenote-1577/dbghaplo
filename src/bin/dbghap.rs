@@ -69,14 +69,13 @@ fn main() {
     let start_t_initial = Instant::now();
     log::info!("Preprocessing VCF/Reference");
     let start_t = Instant::now();
-    let contigs_to_phase;
-    contigs_to_phase = file_reader::get_contigs_to_phase(&options.bam_file);
+    let mut all_contigs = file_reader::get_contigs_to_phase(&options.bam_file);
     let mut main_bam = file_reader::get_bam_readers(&options);
     log::debug!("Read BAM file successfully.");
 
     let mut chrom_seqs = None;
 
-    let vcf_profile = file_reader::get_vcf_profile(&options.vcf_file, &contigs_to_phase);
+    let vcf_profile = file_reader::get_vcf_profile(&options.vcf_file, &all_contigs);
     log::debug!("Read VCF successfully.");
     if options.reference_fasta != "" {
         chrom_seqs = Some(file_reader::get_fasta_seqs(&options.reference_fasta));
@@ -84,18 +83,41 @@ fn main() {
     }
     log::debug!("Finished preprocessing in {:?}", Instant::now() - start_t);
 
-    let mut warn_first_length = true;
-    for contig in contigs_to_phase.iter() {
+    // Parse bed file and sequence ranges
+    let mut bed_sequences = file_reader::get_bed_sequences(&options.bed_file);
+    if let Some(seqs_to_phase) = &options.sequences_to_phase{
+        for seq in seqs_to_phase{
+            let seqs = seq.split(":").collect::<Vec<&str>>();
+            let seq_name = seqs[0];
+            if seqs.len() != 2{
+                bed_sequences.push((seq_name.to_string(), None));
+            }
+            else{
+                let range = seqs[1].split("-").collect::<Vec<&str>>();
+                let start = range[0].parse::<usize>().unwrap();
+                let end = range[1].parse::<usize>().unwrap();
+                bed_sequences.push((seq_name.to_string(), Some((start, end))) );
+            }
+        }
+    }
 
-        if options.sequences_to_phase.is_some() && !options.sequences_to_phase.as_ref().unwrap().contains(&contig)
-        {
-            continue;
-        } else if !vcf_profile.vcf_pos_allele_map.contains_key(contig.as_str())
+    let mut contigs_to_phase = vec![];
+    if bed_sequences.len() != 0{
+        contigs_to_phase = bed_sequences.iter().map(|x| (x.0.clone(), x.1)).collect();
+    }
+    else{
+        contigs_to_phase = all_contigs.iter().map(|x| (x.clone(), None)).collect();
+    }
+
+
+    let mut warn_first_length = true;
+    for (contig, range) in contigs_to_phase.iter() {
+        if !vcf_profile.vcf_pos_allele_map.contains_key(contig.as_str())
             || vcf_profile.vcf_pos_allele_map[contig.as_str()].len() < options.snp_count_filter
         {
             if warn_first_length {
                 log::warn!(
-                    "A contig ({}) is not present or has < {} variants. This warning will not be shown from now on. Make sure to change --snp-count-filter if you want to phase small contigs.",
+                    "A contig ({}) is not present, has invalid range, or has < {} variants. This warning will not be shown from now on.",
                     contig,
                     options.snp_count_filter,
                 );
@@ -104,12 +126,22 @@ fn main() {
             continue;
         }
 
+        let range_contig_str = if range != &None{
+            format!("{}:{}-{}", contig, range.unwrap().0, range.unwrap().1)
+        }
+        else{
+            format!("{}", contig)
+        };
+
         let start_t = Instant::now();
         //log::info!("-----{}-----", contig);
-        log::info!(
-            "Phasing contig {}",
-            contig
-        );
+        if range != &None{
+            log::info!(
+                "Phasing {}",
+                range_contig_str
+            );
+        }
+
         let mut all_frags;
         let frags_without_snps;
         (all_frags, frags_without_snps) = file_reader::get_frags_from_bamvcf_rewrite(
@@ -118,11 +150,12 @@ fn main() {
             &options,
             &mut chrom_seqs,
             &contig,
+            *range
         );
 
         log::debug!("Number of reads passing filtering: {}", all_frags.len());
         if all_frags.len() == 0 {
-            log::debug!("Contig {} has no fragments", contig);
+            log::debug!("Contig {} has no fragments", range_contig_str);
             continue;
         }
 
@@ -137,7 +170,7 @@ fn main() {
 
             //Get last SNP on the genome covered over all fragments.
             let length_gn = utils_frags::get_length_gn(&all_frags);
-            log::info!("Contig {} has {} SNPs", contig, length_gn);
+            log::info!("Contig {} has {} SNPs", range_contig_str, length_gn);
 
             let mut final_frags;
             final_frags = all_frags;
@@ -149,13 +182,13 @@ fn main() {
                 Instant::now() - start_t
             );
 
-            let final_partitions = dbg::dbghap_run(dbg_frags, &options, &snp_to_genome_pos, &contig);
+            let final_partitions = dbg::dbghap_run(dbg_frags, &options, &snp_to_genome_pos, &contig, *range);
 
             if let Some(final_partitions) = final_partitions {
                 consensus::simple_consensus(
                     &mut main_bam,
                     &mut chrom_seqs, 
-                    &contig,
+                    (&contig, *range),
                     &final_partitions,
                     &options,
                     &vcf_profile,

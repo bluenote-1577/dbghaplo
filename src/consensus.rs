@@ -9,7 +9,7 @@ use std::io::{BufWriter, Write};
 pub fn simple_consensus(
     main_bam: &mut bam::IndexedReader,
     chrom_seqs: &mut Option<FastaIndexedReader<std::fs::File>>,
-    contig: &str,
+    contig_range: (&str, Option<(usize,usize)>),
     partition: &Vec<HapFinalResultString>,
     options: &Options,
     vcf_profile: &VcfProfile,
@@ -21,7 +21,18 @@ pub fn simple_consensus(
     let mut record_partition = vec![Vec::new(); partition.len()];
 
     // Get all positions... make N if cov < min-deptha and alsounder certain conditions
-    main_bam.fetch(contig).unwrap();
+    let start_s;
+    let end_s;
+    if let Some((start, end)) = contig_range.1{
+        main_bam.fetch((contig_range.0, start as i32, end as i32)).unwrap();
+        start_s = format!("{}", start);
+        end_s = format!("{}", end);
+    }
+    else{
+        main_bam.fetch(contig_range.0).unwrap();
+        start_s = String::from("ALL");
+        end_s = String::from("ALL");
+    }
     let mut inv_index = FxHashMap::default();
     for i in 0..partition.len(){
         for frag_name in partition[i].assigned_frags.iter(){
@@ -105,7 +116,7 @@ pub fn simple_consensus(
     let bufwriter = BufWriter::new(std::fs::File::create(consensus_file).unwrap());
     let mut consensus_writer = bio::io::fasta::Writer::from_bufwriter(bufwriter);
     for (i, consensus_string) in consensus_strings.iter().enumerate(){
-        let id = format!("Contig-{}\tHaplotype-{}\tSimpleConsensus", contig,i);
+        let id = format!("Contig:{},Range:{}-{},Haplotype:{},SimpleConsensus", contig_range.0, start_s, end_s, i);
         let seq = String::from_utf8(consensus_string.clone()).unwrap();
         consensus_writer.write(&id, None, seq.as_bytes()).unwrap();
     }

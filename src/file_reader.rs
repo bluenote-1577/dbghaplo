@@ -330,6 +330,7 @@ pub fn get_frags_from_bamvcf_rewrite(
     options: &Options,
     chrom_seqs: &mut Option<FastaIndexedReader<std::fs::File>>,
     contig: &str,
+    range: Option<(usize, usize)>,
 ) -> (Vec<Frag>, Vec<Frag>)
 {
 
@@ -340,7 +341,12 @@ pub fn get_frags_from_bamvcf_rewrite(
     let vcf_snp_pos_to_gn_pos_map = &vcf_profile.vcf_snp_pos_to_gn_pos_map;
 
     let long_bam = main_bam;
-    long_bam.fetch(contig).unwrap();
+
+    if range.is_some() {
+        long_bam.fetch((contig, range.unwrap().0 as i32, range.unwrap().1 as i32)).unwrap();
+    } else {
+        long_bam.fetch(contig).unwrap();
+    }
 
     let mut record_vec = vec![];
     for record in long_bam.records() {
@@ -371,7 +377,7 @@ pub fn get_frags_from_bamvcf_rewrite(
                         record.mapq(),
                         use_supplementary,
                         filter_supplementary,
-                        options.mapq_cutoff
+                        options.mapq_cutoff,
                     );
 
                     //                    log::trace!(
@@ -381,6 +387,16 @@ pub fn get_frags_from_bamvcf_rewrite(
                     //                    );
 
                     if passed_check.0 {
+                        //get start and end of alignment
+
+                        let aln_start = record.reference_start();
+                        let aln_end = record.reference_end();
+                        if let Some(range) = range {
+                            //Overlap the range
+                            if aln_start > range.1 as i64 || aln_end < range.0 as i64 {
+                                return;
+                            }
+                        }
                         let rec_name: Vec<u8> = record.qname().iter().cloned().collect();
                         let snp_positions_contig = &vcf_pos_to_snp_counter_map[contig];
                         let pos_allele_map = &vcf_pos_allele_map[contig];
@@ -792,4 +808,25 @@ pub fn l_epsilon_auto_detect(bam_file: &str) -> (usize, f64){
     info!("If -e is not set, estimated -e is set to {}.", final_eps);
     return (final_l, final_eps);
     //panic!();
+}
+
+pub fn get_bed_sequences(bed_file: &Option<String>) -> Vec<(String, Option<(usize,usize)>)>{
+    let mut bed_map = vec![];
+    if bed_file.is_none(){
+        return bed_map;
+    }
+    let lines = read_lines(&bed_file.as_ref().unwrap()).unwrap();
+    for line in lines{
+        let l = line.unwrap();
+        let v: Vec<&str> = l.split('\t').collect();
+        if v.len() < 3{
+            warn!("BED file must have at least 3 columns. Skipping line without 3 columns.");
+            continue;
+        }
+        let chrom = v[0];
+        let start = v[1].parse::<usize>().unwrap();
+        let end = v[2].parse::<usize>().unwrap();
+        bed_map.push((chrom.to_string(), Some((start, end))));
+    }
+    bed_map
 }

@@ -23,7 +23,6 @@ pub struct Options{
     #[arg(short, long, value_enum, default_value_t = Preset::NanoporeR9, help_heading = "PRESETS")]
     pub preset: Preset,
 
-
     //heading = input?
     /// Indexed bam file to phase.
     #[arg(short, long, help_heading = "INPUT")]
@@ -41,7 +40,7 @@ pub struct Options{
     #[arg(short, long, default_value = "dbghap_output", help_heading = "OUTPUT")]
     pub output_dir: String,
 
-    /// Sequences to phase separated by commas (e.g. NC_001802.1,NC_045512.2)
+    /// Sequences to phase separated by commas (e.g. NC_001802.1:1-1000,NC_045512.2)
     #[arg(short='S', long,value_delimiter = ',', help_heading = "INPUT")]
     pub sequences_to_phase: Option<Vec<String>>,
 

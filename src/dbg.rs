@@ -21,6 +21,7 @@ pub fn dbghap_run(
     options: &Options,
     snp_pos_to_genome_pos: &Vec<usize>,
     contig_name: &str,
+    range: Option<(usize, usize)>,
 ) -> Option<Vec<HapFinalResultString>> {
     let k;
     let mut thirty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.33);
@@ -93,6 +94,9 @@ pub fn dbghap_run(
 
     let num_snps = snp_pos_to_genome_pos_new.len();
     let snp_pos_to_genome_pos_new = strand_bias_filter(&mut dbg_frags, options, num_snps, &snp_pos_to_genome_pos_new);
+    if snp_pos_to_genome_pos_new.len() < num_snps / 10 && num_snps > 10{
+        log::warn!("{} has > 90% of SNPs filtered out by strand bias. Maybe coverage is very high. ", contig_name);
+    }
     let num_snps = snp_pos_to_genome_pos_new.len();
 
     if let Some(opt_k) = options.k {
@@ -101,22 +105,28 @@ pub fn dbghap_run(
         k = thirty.min(num_snps * 7 / 10).min(max_k_preset).max(1);
     }
 
+    if k > num_snps {
+        log::warn!("Not enough SNPs; exiting.");
+        return None;
+    }
+
     //disable this for now
     log::trace!("Start k: {}", k);
     let end = 0;
 
     let dbg = dbg_from_frags(&dbg_frags, k, None, None, None);
     log::debug!("Constructed DBG for k = {}", k);
-    let (mut kmer_count, _) = count_kmers(&dbg_frags, k);
+    let (mut kmer_count, used_snp_positions) = count_kmers(&dbg_frags, k);
+    let num_snps_range = used_snp_positions.len();
     let total_cov = kmer_count.iter().fold(0, |acc, (_varmer, cov)| acc + cov);
     let min_cov = u64::max(
-        total_cov / (num_snps as u64 - k as u64 + 1) / coverage_divider,
+        total_cov / (num_snps_range as u64 - k as u64 + 1) / coverage_divider,
         2,
     );
     log::debug!("Minimum coverage for global filter is : {:?}", min_cov);
 
-    let mut dbg = filter_dbg(dbg, Some(min_cov), None, k, false, num_snps);
-    print_dbg(&dbg, "dbg.dot");
+    let mut dbg = filter_dbg(dbg, Some(min_cov), None, k, false, num_snps_range);
+    print_dbg(&dbg, &format!("{}/intermediate/dbg.dot", options.output_dir));
 
     let mut uni = get_unitigs(&dbg, k, false);
     kmer_count.retain(|varmer, _cov| dbg.contains_key(varmer));
@@ -126,16 +136,15 @@ pub fn dbghap_run(
         dbg = dbg_from_frags(&dbg_frags, l + k, Some(dbg), Some(&uni), Some(step));
         uni = get_unitigs(&dbg, k + l, false);
     }
-    print_dbg(&uni, "unitigs.dot");
-
+    print_dbg(&uni, format!("{}/intermediate/unitigs.dot", options.output_dir).as_str());
 
     //Remove tips
     for _ in 0..2{
         let tips = remove_tips(&uni, options, k + end);
-        uni = filter_dbg(uni, None, Some(tips), k + end, false, num_snps);
-        print_dbg(&uni, "tips_removed.dot");
+        uni = filter_dbg(uni, None, Some(tips), k + end, false, num_snps_range);
+        print_dbg(&uni, format!("{}/intermediate/tips_removed.dot", options.output_dir).as_str());
         uni = get_unitigs(&uni, k + end, true);
-        print_dbg(&uni, "tips_unitigs.dot");
+        print_dbg(&uni, format!("{}/intermediate/tips_removed_unitigs.dot", options.output_dir).as_str());
     }
 
     //Unitigging
@@ -147,27 +156,27 @@ pub fn dbghap_run(
     for i in 1..3 {
         let bad_unitigs = query_unitigs(&final_unitigs, i);
         log::debug!("Number of bad unitigs {}", bad_unitigs.len());
-        let filtered_unitigs = filter_dbg(final_unitigs, None, Some(bad_unitigs), k + end, false, num_snps);
-        print_dbg(&filtered_unitigs, format!("clean_dbg_{}.dot", i).as_str());
+        let filtered_unitigs = filter_dbg(final_unitigs, None, Some(bad_unitigs), k + end, false, num_snps_range);
+        print_dbg(&filtered_unitigs, format!("{}/intermediate/clean_dbg_{}.dot", options.output_dir, i).as_str());
         final_unitigs = get_unitigs(&filtered_unitigs, k + end, true);
-        print_dbg(&final_unitigs, format!("clean_unitigs_{}.dot", i).as_str());
+        print_dbg(&final_unitigs, format!("{}/intermediate/clean_unitigs_{}.dot",options.output_dir, i).as_str());
     }
 
     //Remove tips again
     let tips = remove_tips(&final_unitigs, options, k + end);
-    final_unitigs = filter_dbg(final_unitigs, None, Some(tips), k + end, false, num_snps);
-    print_dbg(&final_unitigs, "tips_removed_round2.dot");
+    final_unitigs = filter_dbg(final_unitigs, None, Some(tips), k + end, false, num_snps_range);
+    print_dbg(&final_unitigs, format!("{}/intermediate/tips_removed_round2.dot", options.output_dir).as_str());
     final_unitigs = get_unitigs(&final_unitigs, k + end, true);
 
     
     //Remove small disconnected components that have length < 1.5 * k and coverage < mean_cov / 100
-    let min_cov_small_disconnected = total_cov / (num_snps as u64 - k as u64 + 1) / (coverage_divider / 4);
+    let min_cov_small_disconnected = total_cov / (num_snps_range as u64 - k as u64 + 1) / (coverage_divider / 4);
     log::trace!("Second round min cov :{}", min_cov_small_disconnected);
-    final_unitigs = filter_dbg(final_unitigs, Some(min_cov_small_disconnected), None, k + end, true, num_snps);
+    final_unitigs = filter_dbg(final_unitigs, Some(min_cov_small_disconnected), None, k + end, true, num_snps_range);
     final_unitigs = get_unitigs(&final_unitigs, k + end, true);
 
     let final_unitigs = clean_hanging_kmers(final_unitigs, k + end - 1);
-    print_dbg(&final_unitigs, "nohang_unitigs.dot");
+    print_dbg(&final_unitigs, format!("{}/intermediate/cleaned_unitigs.dot", options.output_dir).as_str());
 
     //Try aligning reads to graph
     log::debug!("Aligning reads to graph of size {}", final_unitigs.len());
@@ -257,9 +266,10 @@ pub fn dbghap_run(
     log::debug!("Number of candidate outside paths: {}", integer_paths.len());
     let assembly_graph = get_assembly_integer_graph(&integer_paths);
 
-    print_dbg(&assembly_graph, "assembly_graph.dot");
+    print_dbg(&assembly_graph, format!("{}/intermediate/assembly_graph.dot", options.output_dir).as_str());
 
     let integer_unitigs = get_unitigs(&assembly_graph, 1, true);
+    //let integer_unitigs = assembly_graph;
     let mut paths = vec![];
     for (int_unitig, info) in integer_unitigs.iter() {
         let path_as_df = int_unitig
@@ -302,7 +312,7 @@ pub fn dbghap_run(
         "intermediate/hap_before.txt",
         "intermediate/id_before.txt",
         None, 
-        contig_name,
+        (contig_name,range),
         None,
     );
 
@@ -317,7 +327,7 @@ pub fn dbghap_run(
             &dbg_frags,
             &format!("intermediate/hap_info-{}.txt", j),
             options,
-            contig_name,
+            (contig_name,range),
             false,
             0.0,
         ).0;
@@ -329,7 +339,7 @@ pub fn dbghap_run(
             format!("intermediate/haplotypes-{}.fasta", j).as_str(),
             format!("intermediate/ids-{}.txt", j).as_str(),
             None,
-            contig_name,
+            (contig_name, range),
             None,
         );
 
@@ -351,7 +361,7 @@ pub fn dbghap_run(
                 &dbg_frags,
                 &format!("intermediate/hap_info-semi.txt"),
                 options,
-                contig_name,
+                (contig_name, range),
                 false,
                 resolution
             );
@@ -370,7 +380,7 @@ pub fn dbghap_run(
                 "haplotypes.fasta",
                 "ids.txt",
                 output_reads,
-                contig_name,
+                (contig_name, range),
                 Some(&unassigned),
             );
 
@@ -382,7 +392,7 @@ pub fn dbghap_run(
                 &dbg_frags,
                 &format!("hap_info.txt"),
                 options,
-                contig_name,
+                (contig_name, range),
                 false,
                 resolution,
             );
@@ -440,11 +450,21 @@ fn consensus<'a>(
     dbg_frags: &'a Vec<FragDBG>,
     consensus_file_loc: &str,
     options: &Options,
-    contig: &str,
+    contig: (&str, Option<(usize,usize)>),
     only_print: bool,
     resolution: f64,
 ) -> (Vec<HapFinalResult<'a>>, Vec<&'a FragDBG>) {
 
+    let contig_name = contig.0;
+    let start;
+    let end;
+    if let Some(range) = contig.1 {
+        start = format!("{}", range.0);
+        end = format!("{}", range.1);
+    } else {
+        start = String::from("ALL");
+        end = String::from("ALL");
+    }
     let previous_total_depth = hap_path_results.iter().map(|x| x.depth).sum::<f64>();
     let dir = Path::new(&options.output_dir);
     let cons_file = dir.join(consensus_file_loc);
@@ -477,10 +497,10 @@ fn consensus<'a>(
         haps.push(hap);
         vec_haps.push(vec_form);
     }
-    consensus_file.write(&format!("Contig-{}", contig).as_bytes()).unwrap();
+    consensus_file.write(&format!("Contig:{},Range:{}-{}", contig_name, start, end).as_bytes()).unwrap();
     for i in 0..vec_haps.len() {
         consensus_file
-            .write(format!("\tHaplotype-{}", i).as_bytes())
+            .write(format!("\tHaplotype:{}", i).as_bytes())
             .unwrap();
     }
     consensus_file.write(b"\n").unwrap();
@@ -1700,10 +1720,21 @@ fn print_final_hap_results(
     hap_file: &str,
     id_file: &str,
     fastq_file: Option<&str>,
-    contig_name: &str,
+    contig_range: (&str, Option<(usize,usize)>),
     unassigned: Option<&Vec<&FragDBG>>,
 ) {
     //prepend outdir_dir
+    let contig_name = contig_range.0;
+    let start;
+    let end;
+    if let Some((s, e)) = contig_range.1 {
+        // start as string
+        start = format!("{}", s);
+        end = format!("{}", e);
+    } else {
+        start = String::from("ALL");
+        end = String::from("ALL");
+    }
     let dir = Path::new(&options.output_dir);
     let hap_file = dir.join(hap_file);
     let hap_file = hap_file.to_str().unwrap();
@@ -1759,8 +1790,8 @@ fn print_final_hap_results(
         haplotype_writer
             .write_all(
                 format!(
-                    ">Contig:{}|Haplotype:{}|Abundance:{:.2}|Depth:{:.2}\n",
-                    contig_name, i, res.relative_abundances, res.depth
+                    ">Contig:{},Range:{}-{},Haplotype:{},Abundance:{:.2},Depth:{:.2}\n",
+                    contig_name, start,end, i, res.relative_abundances, res.depth
                 )
                 .as_bytes(),
             )
@@ -1782,7 +1813,7 @@ fn print_final_hap_results(
 
         //print ids to a file where each row is a path and each column is a frag id, tab sep
         id_writer
-            .write_all(format!("Contig:{}\tHaplotype:{}\t", contig_name, i).as_bytes())
+            .write_all(format!("Contig:{}\tRange:{}-{}\tHaplotype:{}\t", contig_name,start,end, i).as_bytes())
             .unwrap();
         for frag in res.assigned_frags.iter() {
             id_writer.write_all(frag.id.as_bytes()).unwrap();
@@ -1801,7 +1832,7 @@ fn print_final_hap_results(
                 if j != 0 && i != 0 {
                     fastq_writer.write_all(b"\n").unwrap();
                 }
-                let rec_str = format!("@Contig:{}|Haplotype:{}|Read:{}\n", contig_name, i, reads[j].id);
+                let rec_str = format!("@Contig:{},Range:{}-{},Haplotype:{},Read:{},\n", contig_name, start,end, i, reads[j].id);
                 fastq_writer.write_all(rec_str.as_bytes()).unwrap();
                 fastq_writer.write_all(seq).unwrap();
                 fastq_writer.write_all(b"\n+\n").unwrap();
@@ -1816,7 +1847,7 @@ fn print_final_hap_results(
     }
 
     if let Some(unassigned) = unassigned {
-        id_writer.write_all(format!("Contig-{}\tHaplotype-unassigned\t", contig_name).as_bytes()).unwrap();
+        id_writer.write_all(format!("Contig:{}\tRange:{}-{}\tHaplotype:unassigned\t", contig_name, start, end).as_bytes()).unwrap();
         for frag in unassigned.iter() {
             id_writer.write_all(frag.id.as_bytes()).unwrap();
             id_writer.write_all(b"\t").unwrap();
@@ -2059,6 +2090,11 @@ fn get_assembly_integer_graph(
         let overlaps = lapper.find(path1.first, path1.last);
         for ol in overlaps {
             let path2 = &integer_paths[ol.val];
+            if path1.intver == path2.intver {
+                continue;
+            }
+            log::trace!("PATH 1 {} {}", path1.first, path1.last);
+            log::trace!("PATH 2 {} {}", path2.first, path2.last);
             //check for suffix prefix overlaps of VarmerPaths.varmers
             let mut overlap_len = 0;
             for k in 0..path1.intver.len().min(path2.intver.len()) {
@@ -2068,6 +2104,7 @@ fn get_assembly_integer_graph(
                 }
             }
             if overlap_len > 0 {
+                log::trace!("OVERLAP LEN {}", overlap_len);
                 let info1 = assembly_graph.get_mut(&path1.intver).unwrap();
                 info1.out_varmers.push(Arc::new(path2.intver.clone()));
                 let info2 = assembly_graph.get_mut(&path2.intver).unwrap();
@@ -2170,6 +2207,7 @@ fn remove_tips(
    
 fn strand_bias_filter(dbg_frags: &mut Vec<FragDBG>, options: &Options, num_snps: usize, snp_pos_to_gn: &Vec<usize>) -> Vec<usize>{
     let mut pvalues = vec![];
+    let mut SORvalues = vec![];
     let mut snps_to_4_table: Vec<[u32;4]> = vec![[0; 4]; num_snps];
     for frag in dbg_frags.iter() {
         let ind;
@@ -2190,6 +2228,14 @@ fn strand_bias_filter(dbg_frags: &mut Vec<FragDBG>, options: &Options, num_snps:
     for (snp, table) in snps_to_4_table.iter().enumerate(){
         let p = fishers_exact(table).unwrap().two_tail_pvalue;
         pvalues.push((p, snp));
+
+        let top = (table[0] + 1) as f64 * (table[3] + 1) as f64;
+        let bot = (table[1] + 1) as f64 * (table[2] + 1) as f64;
+        let r = top / bot;
+        let ref_ratio = (table[0] + 1).min(table[1] + 1) as f64;
+        let alt_ratio = (table[2] + 1).min(table[3] + 1) as f64;
+        let sor = (r + 1./r).ln() + ref_ratio.ln() - alt_ratio.ln();
+        SORvalues.push((sor, snp));
     }
 
     pvalues.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
@@ -2199,6 +2245,17 @@ fn strand_bias_filter(dbg_frags: &mut Vec<FragDBG>, options: &Options, num_snps:
         if pvalues[i].0 < options.strand_bias_fdr * (i as f64) / (pvalues.len() as f64){
             for j in i..pvalues.len(){
                 log::trace!("THRESHOLD STRAND BIAS SNP {} : {}", pvalues[j].1 + 1, pvalues[j].0);
+                log::trace!("SOR VALUE SNP {} : {}", SORvalues[j].1 + 1, SORvalues[j].0);
+                log::trace!("TABLE {:?}", snps_to_4_table[pvalues[j].1]);
+                let table = snps_to_4_table[pvalues[j].1];
+                let ratio = (table[0] * table[3]) as f64 / (table[1] * table[2]) as f64;
+                let ratio = ratio.max(1./ratio);
+                log::trace!("OR: {}", ratio);
+
+                //Require high odds ratio filter for high coverage datasets
+                if ratio < 2.{
+                    good_snps.insert((pvalues[j].1 + 1) as u32);
+                }
             }
             break;
         }

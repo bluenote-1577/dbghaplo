@@ -231,12 +231,21 @@ pub fn get_avg_length(all_frags: &Vec<Frag>, quantile: f64) -> SnpPosition {
 
 pub fn get_length_gn(all_frags: &Vec<Frag>) -> SnpPosition {
     let mut last_pos = 0;
+    let mut first_pos = std::u32::MAX;
     for frag in all_frags.iter() {
         if frag.last_position > last_pos {
             last_pos = frag.last_position;
         }
+        if frag.first_position < first_pos {
+            first_pos = frag.first_position;
+        }
     }
-    last_pos
+    if last_pos > first_pos {
+        return last_pos - first_pos;
+    }
+    else{
+        return 0
+    }
 }
 
 //Get the log p-value for a 1-sided binomial test. This is a asymptotically tight large deviation
