@@ -12,9 +12,23 @@ Example use cases:
 * deconvolving amplicon/enriched sequencing of specific genes
 * haplotyping small sections of multi-strain bacterial communities
 
-![dbghap-fig1-github](https://github.com/user-attachments/assets/c0a82bb5-7feb-4d13-ab59-04da2bce52b3)
+<p align="center">
+  <img width="600" height="200" src="https://github.com/user-attachments/assets/c0a82bb5-7feb-4d13-ab59-04da2bce52b3", caption="asdf">
+</p>
+<p align="center">
+  <i>
+High-depth, heterogeneous sequencing that spans a 1kb gene.
+  </i>
+</p>
 
-![dbghap-github-fig2](https://github.com/user-attachments/assets/34cb8bcf-8f23-47e4-b2f6-8515a21d3cf4)
+<p align="center">
+  <img width="600" height="200" src="https://github.com/user-attachments/assets/34cb8bcf-8f23-47e4-b2f6-8515a21d3cf4", caption="asdf">
+</p>
+<p align="center">
+  <i>
+Separated groups ("haplotypes") after running dbghaplo.
+  </i>
+</p>
 
 ### Why dbghaplo?
 
