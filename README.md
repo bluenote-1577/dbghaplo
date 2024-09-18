@@ -48,7 +48,7 @@ conda install -c bioconda dbghaplo
 
 #### Option 2 - compile from scratch
 
-1. [rust](https://www.rust-lang.org/tools/install) **version > 1.63.0** and associated tools such as cargo are required and assumed to be in PATH.
+1. [rust](https://www.rust-lang.org/tools/install) **version > 1.74.0** and associated tools such as cargo are required and assumed to be in PATH.
 2. [cmake](https://cmake.org/download/) **version > 3.12** is required. It's sufficient to download the binary from the link and do `PATH="/path/to/cmake-3.xx.x-linux-x86_64/bin/:$PATH"` before installation. 
 3. make 
 
