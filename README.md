@@ -12,6 +12,10 @@ Example use cases:
 * deconvolving amplicon/enriched sequencing of specific genes
 * haplotyping small sections of multi-strain bacterial communities
 
+![dbghap-fig1-github](https://github.com/user-attachments/assets/c0a82bb5-7feb-4d13-ab59-04da2bce52b3)
+
+![dbghap-github-fig2](https://github.com/user-attachments/assets/34cb8bcf-8f23-47e4-b2f6-8515a21d3cf4)
+
 ### Why dbghaplo?
 
 Similar tools exist for "viral quasispecies" detection. dbghaplo was developed to fill the following gaps:
