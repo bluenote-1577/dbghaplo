@@ -2,11 +2,11 @@
 
 ## Introduction
 
-**dbghaplo** is a method that separates long-read sequencing of a mixture of sequences into individual haplotypes. This is called "phasing" or "haplotyping".
+**dbghaplo** is a method that separates long-read sequencing (Nanopore or PacBio) of a mixture of sequences into individual haplotypes. This is called "phasing" or "haplotyping".
 
-dbghaplo works on both PacBio and Nanopore. It is a "local haplotyping" method, so it works best when the sequence-of-interest is approximately the size of the reads. 
+dbghaplo is a "local haplotyping" method, so it works best when the sequence-of-interest is approximately the size of the reads. 
 
-Example use cases include:
+Example use cases:
 
 * mixed viral long-read samples (e.g. co-infections)
 * deconvolving amplicon/enriched sequencing of specific genes
@@ -16,14 +16,16 @@ Example use cases include:
 
 Similar tools exist for "viral quasispecies" detection. dbghaplo was developed to fill the following gaps:
 
-* **Speed**: dbghaplo can haplotype 
+* **Speed and low-memory** - dbghaplo can haplotype > 30,000x coverage of ~1kb gene in a few minutes on a laptop.
+* **High heterogeneity** - dbghaplo uses an de Bruijn Graph assembly approach, which scales up to very diverse samples.
+* **Ease-of-use** - conda installable, engineered in rust, simple command line. 
 
 ## Install + Quick start 
 
 #### Option 1 - bioconda
 
 ```sh
-conda install -c bioconda floria
+conda install -c bioconda dbghaplo
 ```
 
 #### Option 2 - compile from scratch
