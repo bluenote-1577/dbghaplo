@@ -35,7 +35,7 @@ Separated groups ("haplotypes") after running dbghaplo.
 Similar tools exist for "viral quasispecies" detection. dbghaplo was developed to fill the following gaps:
 
 * **Speed and low-memory** - dbghaplo can haplotype > 30,000x coverage of ~1kb gene in a few minutes on a laptop.
-* **High heterogeneity** - dbghaplo uses a de Bruijn Graph approach, which scales up to very diverse samples.
+* **High heterogeneity and coverage** - dbghaplo uses a de Bruijn Graph approach, which scales up to very diverse samples (> 10 haplotypes)
 * **Ease-of-use** - conda installable, engineered in rust, simple command line. 
 
 ## Install + Quick start 
