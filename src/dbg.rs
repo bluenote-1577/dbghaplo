@@ -22,6 +22,7 @@ pub fn dbghap_run(
     snp_pos_to_genome_pos: &Vec<usize>,
     contig_name: &str,
     range: Option<(usize, usize)>,
+    vcf_profile: &VcfProfile,
 ) -> Option<Vec<HapFinalResultString>> {
     let k;
     let mut thirty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.33);
@@ -139,13 +140,13 @@ pub fn dbghap_run(
     print_dbg(&uni, format!("{}/intermediate/unitigs.dot", options.output_dir).as_str());
 
     //Remove tips
-    for _ in 0..2{
-        let tips = remove_tips(&uni, options, k + end);
-        uni = filter_dbg(uni, None, Some(tips), k + end, false, num_snps_range);
-        print_dbg(&uni, format!("{}/intermediate/tips_removed.dot", options.output_dir).as_str());
-        uni = get_unitigs(&uni, k + end, true);
-        print_dbg(&uni, format!("{}/intermediate/tips_removed_unitigs.dot", options.output_dir).as_str());
-    }
+//    for _ in 0..2{
+//        let tips = remove_tips(&uni, options, k + end);
+//        uni = filter_dbg(uni, None, Some(tips), k + end, false, num_snps_range);
+//        print_dbg(&uni, format!("{}/intermediate/tips_removed.dot", options.output_dir).as_str());
+//        uni = get_unitigs(&uni, k + end, true);
+//        print_dbg(&uni, format!("{}/intermediate/tips_removed_unitigs.dot", options.output_dir).as_str());
+//    }
 
     //Unitigging
     let unitigs = uni;
@@ -314,6 +315,8 @@ pub fn dbghap_run(
         None, 
         (contig_name,range),
         None,
+        vcf_profile,
+        &snp_pos_to_genome_pos_new,
     );
 
     let mut j = 0;
@@ -341,8 +344,9 @@ pub fn dbghap_run(
             None,
             (contig_name, range),
             None,
+            vcf_profile,
+            &snp_pos_to_genome_pos_new,
         );
-
 
 
         let mut same = false;
@@ -366,7 +370,7 @@ pub fn dbghap_run(
                 resolution
             );
 
-            let final_results_filtered = filter_final_haplotypes(&final_results, options);
+            let final_results_filtered = filter_final_haplotypes(final_results, options);
 
             let output_reads = if options.output_reads {
                 Some("reads.fq")
@@ -382,6 +386,8 @@ pub fn dbghap_run(
                 output_reads,
                 (contig_name, range),
                 Some(&unassigned),
+                vcf_profile,
+                &snp_pos_to_genome_pos_new,
             );
 
             log::debug!("Final consensus");
@@ -396,6 +402,7 @@ pub fn dbghap_run(
                 false,
                 resolution,
             );
+            hap_path_results = final_results_filtered.clone();
             break;
         }
         hap_path_results = final_results_consensus;
@@ -425,7 +432,7 @@ pub fn dbghap_run(
 }
 
 fn filter_final_haplotypes<'a>(
-    final_results: &'a Vec<HapFinalResult>,
+    final_results: Vec<HapFinalResult<'a>>,
     options: &'a Options,
 ) -> Vec<HapFinalResult<'a>> {
     let mut filtered_results = vec![];
@@ -1679,7 +1686,13 @@ fn reassign_frags<'a>(dbg_frags: &'a Vec<FragDBG>, final_results: &mut Vec<HapFi
                     if *geno == *res.path_frag.seq.get(pos).unwrap() {
                         score += 2;
                     } else {
-                        score -= 4
+                        // if fragments genotype is 0, possible reference bias
+                        if *geno == 0{
+                            score -= 3
+                        }
+                        else{
+                            score -= 5
+                        }
                     }
                 } else {
                     score -= 1;
@@ -1722,6 +1735,8 @@ fn print_final_hap_results(
     fastq_file: Option<&str>,
     contig_range: (&str, Option<(usize,usize)>),
     unassigned: Option<&Vec<&FragDBG>>,
+    vcf_profile: &VcfProfile,
+    snp_pos_to_genome_pos: &Vec<usize>
 ) {
     //prepend outdir_dir
     let contig_name = contig_range.0;
@@ -1798,8 +1813,18 @@ fn print_final_hap_results(
             .unwrap();
         let seq = &res.path_frag.seq;
         let mut printable_seq = vec![b'-'; snps];
-        for (pos, geno) in seq.iter() {
-            printable_seq[*pos as usize - 1] = *geno + 48;
+        if options.allele_output{
+            let pos_to_allele = &vcf_profile.vcf_pos_allele_map[contig_name];
+            for (pos, geno) in seq.iter() {
+                let seq_pos = snp_pos_to_genome_pos[*pos as usize - 1];
+                let allele = pos_to_allele[&seq_pos][*geno as usize];
+                printable_seq[*pos as usize - 1] = allele;
+            }
+        }
+        else{
+            for (pos, geno) in seq.iter() {
+                printable_seq[*pos as usize - 1] = *geno + 48;
+            }
         }
         //print wrapped lines of 80
         let mut j = 0;
@@ -1851,6 +1876,19 @@ fn print_final_hap_results(
         for frag in unassigned.iter() {
             id_writer.write_all(frag.id.as_bytes()).unwrap();
             id_writer.write_all(b"\t").unwrap();
+
+            if let Some(fastq_writer) = &mut fastq_writer{
+                let rec_str = format!("@Contig:{},Range:{}-{},Haplotype:unassigned,Read:{},\n", contig_name, start, end, frag.id);
+                fastq_writer.write_all(rec_str.as_bytes()).unwrap();
+                fastq_writer.write_all(&frag.seq_string[0].to_ascii_vec()).unwrap();
+                fastq_writer.write_all(b"\n+\n").unwrap();
+                if frag.qual_string[0].len() != frag.seq_string[0].len() {
+                    fastq_writer.write_all(&vec![b'I'; frag.seq_string[0].len()]).unwrap();
+                } else {
+                    fastq_writer.write_all(&frag.qual_string[0]).unwrap();
+                }
+                fastq_writer.write_all(b"\n").unwrap();
+            }
         }
     }
 }
@@ -2174,6 +2212,10 @@ fn remove_tips(
     let mut bad_unitigs = vec![];
     //Prev-tip
     for varmer in unitigs.keys(){
+        //Only pop tips for deletions
+        if varmer.len() == varmer.last().unwrap().0 as usize - varmer[0].0 as usize + 1{
+            continue
+        }
         let into = &unitigs[varmer].in_varmers;
         let out = &unitigs[varmer].out_varmers;
         let cov = unitigs[varmer].coverage;

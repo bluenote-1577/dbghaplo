@@ -702,7 +702,8 @@ fn frag_from_record(
                         }
                         //Long read assumption.
                         frag.snp_pos_to_seq_pos
-                            .insert(snp_pos, (0, seq_pos + leading_hardclips as usize));
+                            //.insert(snp_pos, (0, seq_pos + leading_hardclips as usize));
+                            .insert(snp_pos, (0, seq_pos as usize));
                         break;
                     }
                 }

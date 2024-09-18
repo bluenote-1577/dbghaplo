@@ -11,7 +11,7 @@ pub fn realign(
     gn_pos_to_allele: &FxHashMap<GnPosition, Vec<Genotype>>,
 ) {
     let flank = 16;
-    let block_size = 8;
+    let block_size = 16;
     let gaps = Gaps {
         open: -2,
         extend: -1,
@@ -25,6 +25,7 @@ pub fn realign(
             || flank > snp_q_pos
             || flank + snp_q_pos >= frag.seq_string[0].len())
         {
+            let mut ambiguous = true;
             let mut ref_str = ref_gn[snp_gn_pos - flank..snp_gn_pos + flank].to_vec();
             let alleles = &gn_pos_to_allele[&snp_gn_pos];
             let mut best_score = i32::MIN;
@@ -34,6 +35,7 @@ pub fn realign(
                 block_size,
             );
             for i in 0..alleles.len() {
+                
                 ref_str[flank] = alleles[i] as u8;
                 let r = PaddedBytes::from_bytes::<NucMatrix>(&ref_str, block_size);
 
@@ -48,13 +50,16 @@ pub fn realign(
                 if score > best_score {
                     best_score = score;
                     best_geno = i as Genotype;
+                    ambiguous = false;
+                }
+                else if score == best_score{
+                    ambiguous = true;
                 }
 
             }
-            if *orig_geno != best_geno {
-//                println!("Called geno {}, best geno realign {} at {}", orig_geno, best_geno, snp_pos);
+            if !ambiguous{
+                *orig_geno = best_geno;
             }
-            *orig_geno = best_geno;
         }
     }
 }

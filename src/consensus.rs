@@ -77,7 +77,7 @@ pub fn simple_consensus(
 
         log::trace!("Min pos: {}, Max pos: {}", min_pos, max_pos);
         let mut consensus_bases = vec![0; (max_pos - min_pos + 1) as usize];
-        let ambiguity_threshold = 0.75;
+        let ambiguity_threshold = options.n_fraction;
         for (pos, counts) in map_to_allele_count.iter(){
             let mut total_counts = 0;
             let pos = *pos - min_pos;
@@ -116,7 +116,7 @@ pub fn simple_consensus(
     let bufwriter = BufWriter::new(std::fs::File::create(consensus_file).unwrap());
     let mut consensus_writer = bio::io::fasta::Writer::from_bufwriter(bufwriter);
     for (i, consensus_string) in consensus_strings.iter().enumerate(){
-        let id = format!("Contig:{},Range:{}-{},Haplotype:{},SimpleConsensus", contig_range.0, start_s, end_s, i);
+        let id = format!("Contig:{},Range:{}-{},Haplotype:{},Abundance:{},Depth:{} SimpleConsensus", contig_range.0, start_s, end_s, i, partition[i].relative_abundances, partition[i].depth);
         let seq = String::from_utf8(consensus_string.clone()).unwrap();
         consensus_writer.write(&id, None, seq.as_bytes()).unwrap();
     }

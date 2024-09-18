@@ -1,14 +1,14 @@
 extern crate time;
 use clap::Parser;
-use dbghap::file_reader;
-use dbghap::dbg;
-use dbghap::consensus;
-use dbghap::parse_cmd_line;
-use dbghap::utils_frags;
+use dbghaplo::file_reader;
+use dbghaplo::dbg;
+use dbghaplo::consensus;
+use dbghaplo::parse_cmd_line;
+use dbghaplo::utils_frags;
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
-use dbghap::types_structs::*;
+use dbghaplo::types_structs::*;
 
 //This makes statically compiled musl library
 //much much faster. Set to default for x86 systems...
@@ -45,17 +45,30 @@ fn main() {
 
     let contig_out_dir = format!("{}", options.output_dir);
 
-    if Path::new(&contig_out_dir).exists() && options.overwrite {
-        let res = fs::remove_dir_all(&contig_out_dir);
-        if res.is_err() {
-            log::error!(
-                "Could not remove {} successfully. Exiting.",
-                &contig_out_dir
-            );
-            std::process::exit(1);
+    if Path::new(&format!("{}/intermediate", contig_out_dir)).exists() && options.overwrite {
+
+        let dir_path = &contig_out_dir;
+        // Make an exception for this folder
+        let pipeline_files = "pipeline_files";
+        //join the path with the folder to keep
+        
+        let entries = fs::read_dir(dir_path).expect("Could not read output directory");
+        for entry in entries {
+            let entry = entry.unwrap();
+            let file_name = entry.file_name();
+
+            // If the current entry is not the folder you want to keep
+            if file_name != pipeline_files {
+                let path = entry.path();
+                if path.is_file() {
+                    fs::remove_file(path).expect("Could not remove file for dbghaplo run"); // Remove file
+                } else if path.is_dir() {
+                    fs::remove_dir_all(path).expect("Could not remove file for dbghaplo run") ; // Recursively remove directory
+                }
+            }
         }
     }
-    else if Path::new(&contig_out_dir).exists() && !options.overwrite {
+    else if Path::new(&format!("{}/intermediate",contig_out_dir)).exists() && !options.overwrite {
         log::error!(
             "Output directory {} already exists. Use --overwrite to overwrite.",
             &contig_out_dir
@@ -63,7 +76,6 @@ fn main() {
         std::process::exit(1);
     }
 
-    fs::create_dir_all(&format!("{}/intermediate", contig_out_dir)).unwrap();
 
 
     let start_t_initial = Instant::now();
@@ -88,15 +100,31 @@ fn main() {
     if let Some(seqs_to_phase) = &options.sequences_to_phase{
         for seq in seqs_to_phase{
             let seqs = seq.split(":").collect::<Vec<&str>>();
-            let seq_name = seqs[0];
-            if seqs.len() != 2{
+            if seqs.len() == 1{
+                let seq_name = seqs[0];
                 bed_sequences.push((seq_name.to_string(), None));
             }
-            else{
+            else if seqs.len() == 2{
                 let range = seqs[1].split("-").collect::<Vec<&str>>();
-                let start = range[0].parse::<usize>().unwrap();
-                let end = range[1].parse::<usize>().unwrap();
-                bed_sequences.push((seq_name.to_string(), Some((start, end))) );
+                if range.len() != 2{
+                    log::warn!("Invalid range for sequence {}. Ignoring ranges.", seq);
+                    bed_sequences.push((seq.to_string(), None));
+                }
+                else{
+                    let start = range[0].parse::<usize>();
+                    let end = range[1].parse::<usize>();
+                    if start.is_err() || end.is_err(){
+                        let seq_name = seq;
+                        log::warn!("Something went wrong when parsing the string {}. Should be of the form STRING:START-END. Using no range info.", seq);
+                        bed_sequences.push((seq_name.to_string(), None));
+                    }
+                    let seq_name = seqs[0];
+                    bed_sequences.push((seq_name.to_string(), Some((start.unwrap(), end.unwrap()))) );
+                }
+            }
+            else{
+                log::warn!("Something went wrong when parsing the string {}. Should be of the form STRING:START-END. Using no range info.", seq);
+                bed_sequences.push((seq.to_string(), None));
             }
         }
     }
@@ -110,6 +138,7 @@ fn main() {
     }
 
 
+    fs::create_dir_all(&format!("{}/intermediate", contig_out_dir)).unwrap();
     let mut warn_first_length = true;
     for (contig, range) in contigs_to_phase.iter() {
         if !vcf_profile.vcf_pos_allele_map.contains_key(contig.as_str())
@@ -182,7 +211,7 @@ fn main() {
                 Instant::now() - start_t
             );
 
-            let final_partitions = dbg::dbghap_run(dbg_frags, &options, &snp_to_genome_pos, &contig, *range);
+            let final_partitions = dbg::dbghap_run(dbg_frags, &options, &snp_to_genome_pos, &contig, *range, &vcf_profile);
 
             if let Some(final_partitions) = final_partitions {
                 consensus::simple_consensus(

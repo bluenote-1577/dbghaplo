@@ -1,5 +1,5 @@
 [package]
-name = "dbghap"
+name = "dbghaplo"
 version = "0.0.1"
 authors = ["jim <jimshawster@gmail.com>"]
 edition = "2018"
@@ -13,14 +13,13 @@ statrs="0.17"
 rayon="1.7"
 rand="0.8"
 rand_core="0.6"
-rust-htslib= { version = "*", default-features = false }
+rust-htslib= { version = "0.44", default-features = false }
 clap = { version = "4", features = ["derive"] }
 debruijn = "0.3"
 simple_logger="4"
 log="0.4"
 itertools = "0.10"
 block-aligner = { version = "0.4"}
-petgraph = "0.6"
 bio = "1.1"
 bio-types ="0.13"
 rust-lapper = "1.1"

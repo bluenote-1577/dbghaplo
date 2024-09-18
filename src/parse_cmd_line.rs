@@ -11,7 +11,7 @@ pub enum Preset{
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
-#[command(name = "dbghap", version, about = "Long-read haplotyping for diverse small sequences (e.g. viruses, genes).", long_about = None)]
+#[command(name = "dbghaplo", version, about = "Long-read haplotyping for diverse small sequences (e.g. viruses, genes).", long_about = None)]
 pub struct Options{
 
     /// Number of threads to use.
@@ -37,7 +37,7 @@ pub struct Options{
     pub reference_fasta: String,
 
     /// Output directory.
-    #[arg(short, long, default_value = "dbghap_output", help_heading = "OUTPUT")]
+    #[arg(short, long, default_value = "dbghaplo_output", help_heading = "OUTPUT")]
     pub output_dir: String,
 
     /// Sequences to phase separated by commas (e.g. NC_001802.1:1-1000,NC_045512.2)
@@ -59,6 +59,15 @@ pub struct Options{
     /// Output haplotype-tagged reads.
     #[arg(long, help_heading = "OUTPUT")]
     pub output_reads: bool,
+
+    /// Output nucleotide alleles instead of 0-1 (ref,alt) alleles.
+    #[arg(long, help_heading = "OUTPUT")]
+    pub allele_output: bool,
+
+    /// > this fraction supporting the major allele to call a non-N base. 
+    #[arg(long, help_heading = "OUTPUT", default_value_t = 0.66)]
+    pub n_fraction: f64,
+
 
     /// Value of "k". Set automatically if not provided.
     #[arg(short, help_heading = "ALGORITHM")]
