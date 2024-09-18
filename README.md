@@ -1,4 +1,4 @@
-# dbghaplo - long-read haplotype phasing for diverse small sequences
+# dbghaplo - long-read haplotypes from mixtures of "small" sequences
 
 **dbghaplo** is a method that separates long reads (Nanopore or PacBio) of a mixture of sequences into groups with similar alleles. This is called "phasing" or "haplotyping". 
 
