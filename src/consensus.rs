@@ -4,15 +4,15 @@ use rust_htslib::{bam, bam::Read as DUMMY_NAME1};
 use crate::types_structs::*;
 use crate::parse_cmd_line::*;
 use bio::io::fasta::IndexedReader as FastaIndexedReader;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter};
 
 pub fn simple_consensus(
     main_bam: &mut bam::IndexedReader,
-    chrom_seqs: &mut Option<FastaIndexedReader<std::fs::File>>,
+    _chrom_seqs: &mut Option<FastaIndexedReader<std::fs::File>>,
     contig_range: (&str, Option<(usize,usize)>),
     partition: &Vec<HapFinalResultString>,
     options: &Options,
-    vcf_profile: &VcfProfile,
+    _vcf_profile: &VcfProfile,
 ){
     if partition.len() == 0{
         return;

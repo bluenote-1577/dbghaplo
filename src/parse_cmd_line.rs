@@ -9,7 +9,6 @@ pub enum Preset{
     HiFi,
 }
 
-/// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[command(name = "dbghaplo", version, about = "Long-read haplotyping for diverse small sequences (e.g. viruses, genes).", long_about = None)]
 pub struct Options{
@@ -44,7 +43,7 @@ pub struct Options{
     #[arg(short='S', long,value_delimiter = ',', help_heading = "INPUT")]
     pub sequences_to_phase: Option<Vec<String>>,
 
-    ///TODO
+    /// BED file with >= 3 columns (contig, start, end). Only these regions will be phased.
     #[arg(long, help_heading = "INPUT")]
     pub bed_file: Option<String>,
 

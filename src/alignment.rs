@@ -2,7 +2,7 @@ use crate::types_structs::Frag;
 use block_aligner::scan_block::*;
 use block_aligner::scores::*;
 use fxhash::FxHashMap;
-use crate::types_structs::{Genotype, SnpPosition, GnPosition};
+use crate::types_structs::{Genotype, GnPosition};
 //Only do realign around SNPs, will add around deletions later
 pub fn realign(
     ref_gn: &[u8],

@@ -1,7 +1,6 @@
 use ordered_float::*;
 use std::rc::Rc;
 use std::sync::Arc;
-use derivative::Derivative;
 use debruijn::dna_string::DnaString;
 use crate::utils_frags;
 use fxhash::{FxHashMap, FxHashSet};

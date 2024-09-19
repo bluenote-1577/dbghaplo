@@ -14,7 +14,7 @@ rayon="1.7"
 rand="0.8"
 rand_core="0.6"
 rust-htslib= { version = "0.44", default-features = false }
-clap = { version = "4", features = ["derive"] }
+clap = { version = "=4.2.0", features = ["derive"] }
 debruijn = "0.3"
 simple_logger="4"
 log="0.4"
@@ -25,7 +25,6 @@ bio-types ="0.13"
 rust-lapper = "1.1"
 disjoint-sets = "0.4.2"
 ordered-float = "2.0"
-flate2 = "1"
 derivative = "2.2"
 fishers_exact = "1.0"
 

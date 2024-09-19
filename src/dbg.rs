@@ -26,38 +26,35 @@ pub fn dbghap_run(
 ) -> Option<Vec<HapFinalResultString>> {
     let k;
     let mut thirty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.33);
-    let mut fifty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.5);
+    let fifty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.5);
     let max_k_preset;
-    let coverage_divider;
     let max_median;
     let mut resolution;
     match options.preset {
         parse_cmd_line::Preset::OldLongReads => {
             max_k_preset = 10;
-            coverage_divider = 400;
             max_median = 50;
             resolution = 0.02;
         }
 
         parse_cmd_line::Preset::NanoporeR9 => {
             max_k_preset = 20;
-            coverage_divider = 400;
             max_median = 150;
             resolution = 0.01;
         }
         parse_cmd_line::Preset::NanoporeR10 => {
             max_k_preset = 35;
-            coverage_divider = 400;
             max_median = 250;
             resolution = 0.005;
         }
         parse_cmd_line::Preset::HiFi => {
             max_k_preset = 100;
-            coverage_divider = 400;
             max_median = 500;
             resolution = 0.001;
         }
     }
+
+    let coverage_divider = (100. / options.min_abund) as u64;
 
     if let Some(res) = options.resolution {
         resolution = res;
@@ -90,7 +87,6 @@ pub fn dbghap_run(
         log::debug!("Subsampling SNPs");
         snp_pos_to_genome_pos_new = subsample_positions_fragdbg(&mut dbg_frags, &subsampled_positions, &old_pos_to_index_map, snp_pos_to_genome_pos);
         thirty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.33);
-        fifty = utils_frags::get_avg_length_dbgf(&dbg_frags, 0.50);
     }
 
     let num_snps = snp_pos_to_genome_pos_new.len();
@@ -1567,7 +1563,7 @@ fn get_path_haps<'a>(
     dbg_frags: &'a Vec<FragDBG>,
     final_unitigs: &FxHashMap<VarMer, DBGInfo>,
     paths: Vec<Vec<(&VarMer, usize)>>,
-    snps: usize,
+    _snps: usize,
     options: &Options,
 ) -> Vec<HapFinalResult<'a>> {
     let mut path_frags: Vec<DictFrag> = vec![];
@@ -2205,7 +2201,7 @@ fn subsample_positions_fragdbg(
 
 fn remove_tips(
     unitigs: &FxHashMap<VarMer, DBGInfo>,
-    options: &Options,
+    _options: &Options,
     k: usize,
 ) -> Vec<VarMer> {
 
@@ -2249,7 +2245,6 @@ fn remove_tips(
    
 fn strand_bias_filter(dbg_frags: &mut Vec<FragDBG>, options: &Options, num_snps: usize, snp_pos_to_gn: &Vec<usize>) -> Vec<usize>{
     let mut pvalues = vec![];
-    let mut SORvalues = vec![];
     let mut snps_to_4_table: Vec<[u32;4]> = vec![[0; 4]; num_snps];
     for frag in dbg_frags.iter() {
         let ind;
@@ -2270,14 +2265,6 @@ fn strand_bias_filter(dbg_frags: &mut Vec<FragDBG>, options: &Options, num_snps:
     for (snp, table) in snps_to_4_table.iter().enumerate(){
         let p = fishers_exact(table).unwrap().two_tail_pvalue;
         pvalues.push((p, snp));
-
-        let top = (table[0] + 1) as f64 * (table[3] + 1) as f64;
-        let bot = (table[1] + 1) as f64 * (table[2] + 1) as f64;
-        let r = top / bot;
-        let ref_ratio = (table[0] + 1).min(table[1] + 1) as f64;
-        let alt_ratio = (table[2] + 1).min(table[3] + 1) as f64;
-        let sor = (r + 1./r).ln() + ref_ratio.ln() - alt_ratio.ln();
-        SORvalues.push((sor, snp));
     }
 
     pvalues.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
@@ -2287,7 +2274,6 @@ fn strand_bias_filter(dbg_frags: &mut Vec<FragDBG>, options: &Options, num_snps:
         if pvalues[i].0 < options.strand_bias_fdr * (i as f64) / (pvalues.len() as f64){
             for j in i..pvalues.len(){
                 log::trace!("THRESHOLD STRAND BIAS SNP {} : {}", pvalues[j].1 + 1, pvalues[j].0);
-                log::trace!("SOR VALUE SNP {} : {}", SORvalues[j].1 + 1, SORvalues[j].0);
                 log::trace!("TABLE {:?}", snps_to_4_table[pvalues[j].1]);
                 let table = snps_to_4_table[pvalues[j].1];
                 let ratio = (table[0] * table[3]) as f64 / (table[1] * table[2]) as f64;

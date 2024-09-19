@@ -650,7 +650,7 @@ fn frag_from_record(
     let second_in_pair_mask = 128;
     let supplementary_mask = 2048;
     let reverse_mask = 16;
-    let mut leading_hardclips = 0;
+    let mut _leading_hardclips = 0;
     let paired =
         (record.flags() & first_in_pair_mask > 0) || (record.flags() & second_in_pair_mask > 0);
     let reverse = record.flags() & reverse_mask > 0;
@@ -663,7 +663,7 @@ fn frag_from_record(
     );
     frag.forward_strand = !reverse;
     if record.flags() & supplementary_mask > 0 {
-        leading_hardclips = record.cigar().leading_hardclips();
+        _leading_hardclips = record.cigar().leading_hardclips();
     }
     frag.first_pos_base = record.reference_start() as GnPosition;
     frag.last_pos_base = record.reference_end() as GnPosition;
