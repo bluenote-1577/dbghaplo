@@ -32,9 +32,9 @@ Separated groups ("haplotypes") after running dbghaplo.
 
 Similar tools exist for "viral quasispecies" detection. dbghaplo was developed to fill the following gaps:
 
-* **Speed and low-memory** - dbghaplo can haplotype > 30,000x coverage of ~1kb gene in a few minutes on a laptop.
-* **High heterogeneity and coverage** - dbghaplo uses a de Bruijn Graph approach, which scales up to very diverse samples (> 10 haplotypes)
-* **Ease-of-use** - conda installable, engineered in rust, simple command line. 
+* **Speed and low-memory** - dbghaplo scales approximately linearly with sequencing depth and # of SNPs. > 30,000x coverage genes can be haplotyped in minutes. 
+* **High heterogeneity and coverage** - dbghaplo uses a de Bruijn Graph approach, which works with very diverse samples (> 10 haplotypes)
+* **Ease-of-use + interpretable outputs** - conda installable, engineered in rust, simple command line. Outputs are easy to interpret (haplotagged BAM or MSA). 
 
 ## Install + Quick start 
 
