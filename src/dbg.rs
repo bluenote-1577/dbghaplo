@@ -719,10 +719,6 @@ fn get_edges_varmers(dbg: &mut FxHashMap<VarMer, DBGInfo>, k: usize) {
 }
 
 pub fn print_dbg(dbg: &FxHashMap<VarMer, DBGInfo>, file_name: &str) {
-    if dbg.is_empty() {
-        log::warn!("Empty graph.");
-        return;
-    }
     let mut dot = String::from("digraph G {\n");
     for (node, info) in dbg.iter() {
         let out_edges = &info.out_varmers;
