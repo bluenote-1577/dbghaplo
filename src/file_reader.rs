@@ -271,7 +271,8 @@ pub fn get_vcf_profile<'a>(vcf_file: &str, ref_chroms: &'a Vec<String>) -> VcfPr
             last_ref_chrom = contig_name;
             curr_pos = 0;
         }
-        let pos_allele_map = vcf_pos_allele_map
+        let pos_allele_map : &mut FxHashMap<GnPosition, Vec<Genotype>>
+            = vcf_pos_allele_map
             .entry(contig_name.as_str())
             .or_insert(FxHashMap::default());
         let pos_to_snp_counter_map = vcf_pos_to_snp_counter_map
@@ -293,13 +294,17 @@ pub fn get_vcf_profile<'a>(vcf_file: &str, ref_chroms: &'a Vec<String>) -> VcfPr
             continue;
         }
 
-        if curr_pos != 0 && unr.pos() - curr_pos  < 1 {
+        if curr_pos != 0 && unr.pos() == curr_pos{
             debug!("VCF : Variant at position {} is too close to previous variant. Ignoring.", unr.pos());
+            let vec = pos_allele_map.get_mut(&(curr_pos as GnPosition)).unwrap();
+            for allele in al_vec.iter(){
+                if !vec.contains(allele){
+                    vec.push(*allele);
+                }
+            }
             continue;
         }
-
         curr_pos = unr.pos();
-
         snp_pos_to_gn_pos_map.push(unr.pos() as GnPosition);
         pos_to_snp_counter_map.insert(unr.pos() as GnPosition, snp_counter - 1);
         snp_counter += 1;
