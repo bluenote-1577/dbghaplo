@@ -702,6 +702,25 @@ pub fn get_errors_cov_from_frags(
     );
 }
 
+fn get_iqr(hap: &Haplotype) -> [OrderedFloat<f64>; 2] {
+    let ret;
+    let mut total_covs = vec![];
+    for (_pos, geno_dict) in hap.iter() {
+        let total_cov = geno_dict.iter().map(|x| *x.1).sum::<GenotypeCount>();
+        total_covs.push(total_cov);
+    }
+    if total_covs.is_empty() {
+        ret = [OrderedFloat(0.), OrderedFloat(f64::MAX/2.)];
+    } else {
+        total_covs.sort();
+        let q1 = total_covs[total_covs.len() / 4];
+        let q4 = total_covs[total_covs.len() * 3 / 4];
+        let iqr = q4 - q1;
+        ret = [q1 - iqr * OrderedFloat(2.), q4 + OrderedFloat(2.) * iqr];
+    }
+    return ret;
+}
+
 pub fn distance_between_haplotypes(
     hap1: &Haplotype,
     hap2: &Haplotype,
@@ -709,6 +728,12 @@ pub fn distance_between_haplotypes(
     reliability_cutoff: f64,
     cov_cutoff: f64,
 ) -> (f64, f64) {
+    let hap1_iqr_intervals = get_iqr(hap1);
+    let hap2_iqr_intervals = get_iqr(hap2);
+    log::trace!("hap1_iqr_intervals {:?}", hap1_iqr_intervals);
+    log::trace!("hap2_iqr_intervals {:?}", hap2_iqr_intervals);
+
+    let mut diff_poses = vec![];
     let cov_cutoff = OrderedFloat(cov_cutoff);
     let mut same = 0.;
     let mut diff = 0.;
@@ -731,10 +756,17 @@ pub fn distance_between_haplotypes(
             if ratioshap1[pos].into_inner() < reliability_cutoff || ratioshap2[pos].into_inner() < reliability_cutoff {
                 continue;
             }
-
             let cov_pos_2 = hap2[pos].iter().map(|x| *x.1).sum::<GenotypeCount>();
+
+            let pos_hap1_fits_iqr = cov_pos_1 > hap1_iqr_intervals[0]
+                && cov_pos_1 < hap1_iqr_intervals[1];
+            let pos_hap2_fits_iqr = cov_pos_2 > hap2_iqr_intervals[0]
+                && cov_pos_2 < hap2_iqr_intervals[1];
+
             if (cov_pos_1 > cov_cutoff && cov_pos_2 > cov_cutoff)
-                || *pos >= range.0 && *pos <= range.1
+                && (*pos >= range.0 && *pos <= range.1)
+                && pos_hap1_fits_iqr
+                && pos_hap2_fits_iqr
             {
                 let consensus_var1 = hap1
                     .get(pos)
@@ -757,11 +789,14 @@ pub fn distance_between_haplotypes(
                     same += 1.
                 } else {
                     //diff += (((ratioshap1[pos] - 0.5) * (ratioshap2[pos] - 0.5))/(0.25)).into_inner();
-                    diff += 1.
+                    diff += 1.;
+                    diff_poses.push(*pos);
                 }
             }
         }
     }
+
+    log::trace!("diff_poses {:?}", diff_poses);
 
     return (same, diff);
 }

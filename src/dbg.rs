@@ -167,7 +167,7 @@ pub fn dbghap_run(
 
     
     //Remove small disconnected components that have length < 1.5 * k and coverage < mean_cov / 100
-    let min_cov_small_disconnected = total_cov / (num_snps_range as u64 - k as u64 + 1) / (coverage_divider / 4);
+    let min_cov_small_disconnected = u64::max(total_cov / (num_snps_range as u64 - k as u64 + 1) / (coverage_divider) * 4, 2);
     log::trace!("Second round min cov :{}", min_cov_small_disconnected);
     final_unitigs = filter_dbg(final_unitigs, Some(min_cov_small_disconnected), None, k + end, true, num_snps_range);
     final_unitigs = get_unitigs(&final_unitigs, k + end, true);
@@ -331,6 +331,8 @@ pub fn dbghap_run(
             0.0,
         ).0;
 
+        //let final_results_consensus = filter_final_haplotypes(final_results_consensus, options);
+
         print_final_hap_results(
             &final_results_consensus,
             num_snps,
@@ -352,22 +354,33 @@ pub fn dbghap_run(
 
         if same{
             hap_path_results = final_results_consensus;
-            
-            log::debug!("Semifinal consensus");
-            let (final_results, unassigned) = consensus(
-                &hap_path_results,
-                num_snps,
-                &snp_pos_to_genome_pos_new,
-                &dbg_frags,
-                &format!("intermediate/hap_info-semi.txt"),
-                options,
-                (contig_name, range),
-                false,
-                resolution
-            );
+            let mut unassigned;
+            loop{
+                log::debug!("Semifinal consensus");
+                let (final_results, unassigned_loop) = consensus(
+                    &hap_path_results,
+                    num_snps,
+                    &snp_pos_to_genome_pos_new,
+                    &dbg_frags,
+                    &format!("intermediate/hap_info-semi.txt"),
+                    options,
+                    (contig_name, range),
+                    false,
+                    resolution
+                );
+                unassigned = unassigned_loop;
 
-            let final_results_filtered = filter_final_haplotypes(final_results, options);
+                let final_results_filtered = filter_final_haplotypes(final_results, options);
+                //let final_results_filtered = final_results;
+                if final_results_filtered.len() == hap_path_results.len(){
+                    break;
+                }
+                else{
+                    hap_path_results = final_results_filtered;
+                }
+            }
 
+            let final_results_filtered = hap_path_results;
             let output_reads = if options.output_reads {
                 Some("reads.fq")
             } else {
@@ -509,7 +522,7 @@ fn consensus<'a>(
     consensus_file.write(b"\n").unwrap();
     for i in 1..snps + 1 {
         consensus_file
-            .write(format!("\t{}", snp_pos_to_genome_pos[i - 1] + 1).as_bytes())
+            .write(format!("{}", snp_pos_to_genome_pos[i - 1] + 1).as_bytes())
             .unwrap();
         for j in 0..vec_haps.len() {
             if vec_haps[j].contains_key(&(i as u32)) {
@@ -729,7 +742,7 @@ pub fn print_dbg(dbg: &FxHashMap<VarMer, DBGInfo>, file_name: &str) {
                 .collect::<Vec<String>>()
                 .join("");
             s1.push_str(&format!(
-                "_{}-{}:{}-LEN:{}",
+                "_{}-{}_COV:{}_LEN:{}",
                 node.first().unwrap().0,
                 node.last().unwrap().0,
                 info.coverage,
@@ -750,14 +763,14 @@ pub fn print_dbg(dbg: &FxHashMap<VarMer, DBGInfo>, file_name: &str) {
                 .join("");
             //append coverage to s1 and s2
             s1.push_str(&format!(
-                "_{}-{}:{}-LEN:{}",
+                "_{}-{}_COV:{}_LEN:{}",
                 node.first().unwrap().0,
                 node.last().unwrap().0,
                 info.coverage,
                 node.len()
             ));
             s2.push_str(&format!(
-                "_{}-{}:{}-LEN:{}",
+                "_{}-{}_COV:{}_LEN:{}",
                 out.first().unwrap().0,
                 out.last().unwrap().0,
                 dbg.get(&**out).unwrap().coverage,
@@ -1485,7 +1498,9 @@ pub fn query_unitigs(unitigs: &FxHashMap<VarMer, DBGInfo>, threshold: usize) -> 
             if hits[trace_index].varmer.first_position <= unitig1.first_position
                 && hits[trace_index].varmer.last_position >= unitig1.last_position
             {
-                final_cov = hits[max_index].varmer.cov;
+                if hits[trace_index].varmer.cov > final_cov{
+                    final_cov = hits[trace_index].varmer.cov;
+                }
             }
         }
 
@@ -2272,12 +2287,18 @@ fn strand_bias_filter(dbg_frags: &mut Vec<FragDBG>, options: &Options, num_snps:
                 log::trace!("THRESHOLD STRAND BIAS SNP {} : {}", pvalues[j].1 + 1, pvalues[j].0);
                 log::trace!("TABLE {:?}", snps_to_4_table[pvalues[j].1]);
                 let table = snps_to_4_table[pvalues[j].1];
-                let ratio = (table[0] * table[3]) as f64 / (table[1] * table[2]) as f64;
+                let ratio;
+                if table[1] == 0 || table[2] == 0{
+                    ratio = f64::MAX;
+                }
+                else{
+                    ratio = (table[0] * table[3]) as f64 / (table[1] * table[2]) as f64;
+                }
                 let ratio = ratio.max(1./ratio);
                 log::trace!("OR: {}", ratio);
 
                 //Require high odds ratio filter for high coverage datasets
-                if ratio < 2.{
+                if ratio < 1.5{
                     good_snps.insert((pvalues[j].1 + 1) as u32);
                 }
             }

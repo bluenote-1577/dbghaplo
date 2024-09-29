@@ -72,7 +72,10 @@ def run_command(command, error_message):
         sys.exit(1)
 
 def run_pipeline(ref, reads, output_dir, threads, dbghaplo_options, lofreq_options, args):
-    overwrite = False
+    if args.overwrite:
+        log_info("WARNING: Overwriting existing files. This will remove the output directory if it exists.")
+        if os.path.exists(output_dir):
+            os.system(f"rm -r {output_dir}")
     #pipeline_folder = output_dir + "/pipeline_files"
     pipeline_folder = os.path.join(output_dir, "pipeline_files")
     if not os.path.exists(pipeline_folder):
@@ -89,7 +92,7 @@ def run_pipeline(ref, reads, output_dir, threads, dbghaplo_options, lofreq_optio
     vcf_gz_file = f"{vcf_file}.gz"
 
     # Step 1: Check if BAM file exists
-    if check_file_exists(bam_file, overwrite):
+    if check_file_exists(bam_file):
         run_command(
             f"minimap2 -a {ref} {reads} -t {threads} | samtools sort -@ {threads} -o {bam_file}",
             "Failed during alignment or BAM sorting"
@@ -97,29 +100,29 @@ def run_pipeline(ref, reads, output_dir, threads, dbghaplo_options, lofreq_optio
 
     # Step 2: Check if BAM index exists
     bam_index = bam_file + ".bai"
-    if check_file_exists(bam_index, overwrite):
+    if check_file_exists(bam_index):
         run_command(f"samtools index {bam_file}", "Failed to index BAM file")
 
     # Step 3: Check if VCF file exists
-    if check_file_exists(vcf_file + '.gz', overwrite): 
-        if not try_command(f"lofreq call-parallel {lofreq_options} --pp-threads {threads} -B -f {ref} {bam_file} -o {vcf_file}", "LoFreq parallel variant calling failed. Trying single-threaded..."):
-            run_command(f"lofreq call {lofreq_options} -B -f {ref} {bam_file} -o {vcf_file}", "LoFreq variant calling failed")
+    if check_file_exists(vcf_file + '.gz'): 
+        lofreq_option_string = " ".join([f"--{option}" for option in lofreq_options.split()])
+        if not try_command(f"lofreq call-parallel {lofreq_option_string} --pp-threads {threads} -B -f {ref} {bam_file} -o {vcf_file}", "LoFreq parallel variant calling failed. Trying single-threaded..."):
+            run_command(f"lofreq call {lofreq_option_string} -B -f {ref} {bam_file} -o {vcf_file}", "LoFreq variant calling failed")
 
     # Step 4: Check if compressed VCF and index exist
-    if check_file_exists(vcf_gz_file, overwrite) and check_file_exists(vcf_gz_file + ".tbi", overwrite):
+    if check_file_exists(vcf_gz_file) and check_file_exists(vcf_gz_file + ".tbi"):
         run_command(f"bgzip {vcf_file} -f", "Failed to compress VCF file")
         run_command(f"tabix {vcf_gz_file} -f", "Failed to index VCF file")
 
     # Step 5: Run dbghap
-    if check_file_exists(os.path.join(output_dir, 'haplotypes.fasta'), overwrite):
-        if overwrite and "--overwrite" not in dbghaplo_options:
-            dbghaplo_options += " --overwrite"
-        run_command(f"dbghaplo -b {bam_file} -v {vcf_gz_file} -r {ref} -t {threads} {dbghaplo_options} -o {output_dir}",
+    if check_file_exists(os.path.join(output_dir, 'haplotypes.fasta')):
+        dbghaplo_option_string = " ".join([f"--{option}" for option in dbghaplo_options.split()])
+        run_command(f"dbghaplo -b {bam_file} -v {vcf_gz_file} -r {ref} -t {threads} {dbghaplo_option_string} -o {output_dir}",
                         "dbghaplo execution failed")
 
 # Check if a file exists
 # Disable overwriting for now... 
-def check_file_exists(file_path, overwrite, warning_message = None):
+def check_file_exists(file_path, overwrite = False, warning_message = None):
     """Checks if a file exists and handles the overwrite option."""
     if os.path.exists(file_path):
         if overwrite:
@@ -137,9 +140,10 @@ def main():
     parser.add_argument('-i', '--reads', required=True, help='Input reads')
     parser.add_argument('-o', '--output-dir', required=True, help='Output directory')
     parser.add_argument('-t', '--threads', default=3, help='Number of threads', type=int)
-    parser.add_argument('--dbghaplo-options', default="", help='Options to pass to dbghaplo')
-    #parser.add_argument('--overwrite', action='store_true', help='Overwrite existing files if present')
-    parser.add_argument('--lofreq-options', default="", help='Options to pass to LoFreq')
+    parser.add_argument('--dbghaplo-options', default="", help='Options to pass to dbghaplo, long-form only and separated by spaces (e.g. "min-coverage=10 output-reads")')
+    #parser.add_argument('--overwrite', default='store_false', help='Overwrite existing files if present. WARNING: will remove the directory if it exists.')
+    parser.add_argument('--overwrite', action='store_true', help='Overwrite existing files if present. WARNING: will remove the directory if it exists.')
+    parser.add_argument('--lofreq-options', default="", help='Options to pass to LoFreq, long-form only and separated by spaces')
     parser.add_argument('--single-thread-lofreq', action='store_true', help='Run LoFreq with a single thread')
 
     args = parser.parse_args()

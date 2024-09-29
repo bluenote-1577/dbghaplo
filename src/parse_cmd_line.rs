@@ -39,11 +39,13 @@ pub struct Options{
     #[arg(short, long, default_value = "dbghaplo_output", help_heading = "OUTPUT")]
     pub output_dir: String,
 
-    /// Sequences to phase separated by commas (e.g. NC_001802.1:1-1000,NC_045512.2)
+    /// Sequences to phase separated by commas (e.g. NC_001802.1:1-1000,NC_045512.2). See also
+    /// --bed-file.
     #[arg(short='S', long,value_delimiter = ',', help_heading = "INPUT")]
     pub sequences_to_phase: Option<Vec<String>>,
 
-    /// BED file with >= 3 columns (contig, start, end). Only these regions will be phased.
+    /// BED file with >= 3 columns (contig, start, end). Only these regions will be phased; reads
+    /// must cover 50% of the region to be considered.
     #[arg(long, help_heading = "INPUT")]
     pub bed_file: Option<String>,
 

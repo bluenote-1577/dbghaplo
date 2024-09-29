@@ -399,6 +399,11 @@ pub fn get_frags_from_bamvcf_rewrite(
                         if let Some(range) = range {
                             //Overlap the range
                             if aln_start > range.1 as i64 || aln_end < range.0 as i64 {
+                                log::trace!(
+                                    "Read {} does not overlap with range {:?}. Skipping.",
+                                    str::from_utf8(&record.qname()).unwrap(),
+                                    range
+                                );
                                 return;
                             }
                         }
