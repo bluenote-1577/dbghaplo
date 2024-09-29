@@ -7,7 +7,7 @@ dbghaplo is a "local haplotyping" method, so it works best when the sequence-of-
 ### Example use cases:
 
 * mixed viral long-read samples (e.g. co-infections)
-* deconvolving amplicon/enriched sequencing of specific genes
+* amplicon/enriched sequencing of specific genes
 * haplotyping small sections of multi-strain bacterial communities
 
 <p align="center">
