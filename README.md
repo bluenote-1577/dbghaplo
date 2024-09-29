@@ -36,11 +36,12 @@ Similar tools exist for detection of similar haplotypes in mixtures. dbghaplo wa
 * **High heterogeneity and coverage** - dbghaplo uses a de Bruijn Graph approach, which works with very diverse samples (> 10 haplotypes)
 * **Ease-of-use + interpretable outputs** - conda installable, engineered in rust, simple command line. Outputs are easy to interpret (haplotagged BAM or MSA). 
 
-### Install
+## Install
 
 See the [installation instructions on the wiki](https://github.com/bluenote-1577/dbghaplo/wiki/Installation).
 
-### Quick Start after install 
+## Quick Start after install 
 
 ```sh
+
 ```
