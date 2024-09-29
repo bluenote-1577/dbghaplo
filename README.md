@@ -30,7 +30,7 @@ Separated groups ("haplotypes") after running dbghaplo.
 
 ### Why dbghaplo?
 
-Similar tools exist for "viral quasispecies" detection. dbghaplo was developed to fill the following gaps:
+Similar tools exist for detection of similar haplotypes in mixtures. dbghaplo was developed to fill the following gaps:
 
 * **Speed and low-memory** - dbghaplo scales approximately linearly with sequencing depth and # of SNPs. > 30,000x coverage genes can be haplotyped in minutes. 
 * **High heterogeneity and coverage** - dbghaplo uses a de Bruijn Graph approach, which works with very diverse samples (> 10 haplotypes)
