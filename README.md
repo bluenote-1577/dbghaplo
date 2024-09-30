@@ -90,7 +90,3 @@ ls pipeline_output/pipeline_files
 ## Citation
 
 Forthcoming.
-
-## Citation 
-
-Forthcoming. 
