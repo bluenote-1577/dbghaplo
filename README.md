@@ -88,7 +88,7 @@ ls pipeline_output/pipeline_files
 
 ### Tutorials
 
-* [Tutorial 1 - getting started](https://github.com/bluenote-1577/dbghaplo/wiki/Tutorial-1:-getting-started-with-dbghaplo)
+* [Tutorial 1 - getting started with dbghaplo](https://github.com/bluenote-1577/dbghaplo/wiki/Tutorial-1:-getting-started-with-dbghaplo)
 
 ## Citation
 
