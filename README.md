@@ -50,15 +50,32 @@ See the [installation instructions on the wiki](https://github.com/bluenote-1577
 ## Quick Start after install 
 
 ```sh
+git clone https://github.com/bluenote-1577/dbghaplo
+cd dbghaplo
+dbghaplo -b dbghaplo -b hiv_test/3000_95_3.bam  -v hiv_test/3000_95_3.vcf.gz  -r hiv_test/OR483991.1.fasta
+ls dbghaplo_output
+```
 
-### see options (multithreading, input/output types, tuning parameters)
-dbghaplo -h
+### Pipeline usage (reads -> haplotypes)
 
-### running dbghaplo from BAM + VCF 
-dbghaplo -b sorted_indexed.bam -v snps.vcf.gz -r reference.fa
+We provide a pipeline for going from reads -> haplotypes directly without BAM and VCF generation. This uses lofreq and minimap2 for SNP calling and alignment. 
 
-### running dbghaplo pipeline from reads directly (requires samtools, lofreq, and bcftools)
+#### If you installed from conda
+
+```sh
 run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa
+```
+
+#### If you compiled dbghaplo or are using a static binary
+
+```sh
+# mamba install -c bioconda tabix samtools lofreq minimap2
+samtools -h
+lofreq -h
+minimap2 -h 
+tabix -h 
+
+dbghaplo/scripts/run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa
 ```
 
 ## Manuals, tutorials, and cookbook
