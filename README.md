@@ -75,7 +75,7 @@ lofreq -h
 minimap2 -h 
 tabix -h 
 
-dbghaplo/scripts/run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa
+dbghaplo/scripts/run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa -o pipeline_output
 ```
 
 ## Manuals, tutorials, and cookbook
