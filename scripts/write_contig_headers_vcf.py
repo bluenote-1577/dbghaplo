@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from sys import argv
 
 vcf_file = argv[1]
