@@ -81,10 +81,9 @@ ls pipeline_output/pipeline_files
 ## Manuals, tutorials, and cookbook
 
 ### How to use dbghaplo
-
+* [Output format](https://github.com/bluenote-1577/dbghaplo/wiki/Output-format) - for more information on how to interpret outputs.
 * [Cookbook](https://github.com/bluenote-1577/dbghaplo/wiki/Cookbook) - see here for usage examples.
 * [Advanced usage manual](https://github.com/bluenote-1577/dbghaplo/wiki/Advanced-usage-manual) - see here for more detailed information about parameters and usage.
-* [Output format](https://github.com/bluenote-1577/dbghaplo/wiki/Output-format) - for more information on how to interpret outputs.
 
 ### Tutorials
 
