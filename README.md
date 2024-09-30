@@ -51,6 +51,8 @@ See the [installation instructions on the wiki](https://github.com/bluenote-1577
 
 ```sh
 
+### see options (multithreading, input/output types, tuning parameters)
+dbghaplo -h
 
 ### running dbghaplo from BAM + VCF 
 dbghaplo -b sorted_indexed.bam -v snps.vcf.gz -r reference.fa
