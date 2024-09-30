@@ -60,3 +60,14 @@ dbghaplo -b sorted_indexed.bam -v snps.vcf.gz -r reference.fa
 ### running dbghaplo pipeline from reads directly (requires samtools, lofreq, and bcftools)
 run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa
 ```
+
+## Manuals, tutorials, and cookbook
+
+### Manuals
+
+* [Cookbook](https://github.com/bluenote-1577/dbghaplo/wiki/Cookbook) - see here for usage examples.
+* [Advanced usage manual](https://github.com/bluenote-1577/dbghaplo/wiki/Advanced-usage-manual) - see here for more detailed information about parameters and usage.
+
+### Tutorials
+
+* [Tutorial 1 - getting started](https://github.com/bluenote-1577/dbghaplo/wiki/Tutorial-1:-getting-started-with-dbghaplo)
