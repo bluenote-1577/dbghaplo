@@ -38,6 +38,9 @@ Similar tools exist for detection of similar haplotypes in mixtures. dbghaplo wa
 
 ## Install
 
+> [!NOTE]
+> conda install is forthcoming...
+
 ```sh
 mamba install -c bioconda dbghaplo
 ```
