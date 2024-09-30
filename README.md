@@ -43,23 +43,21 @@ Similar tools exist for detection of similar haplotypes in mixtures. dbghaplo wa
 
 ```sh
 mamba install -c bioconda dbghaplo
+dbghaplo -h 
 ```
 
 See the [installation instructions on the wiki](https://github.com/bluenote-1577/dbghaplo/wiki/Installation) if you want to compile directly or want a static binary.
 
 ## Quick Start after install 
 
+### Option 1 (more flexible): Running dbghaplo with VCF + BAM
 ```sh
 git clone https://github.com/bluenote-1577/dbghaplo
 cd dbghaplo
 dbghaplo -b hiv_test/3000_95_3.bam  -v hiv_test/3000_95_3.vcf.gz  -r hiv_test/OR483991.1.fasta
 ls dbghaplo_output
 ```
-
-### Pipeline usage (reads -> haplotypes)
-
-We provide a pipeline for going from reads -> haplotypes directly. This uses lofreq and minimap2 for SNP calling and alignment. 
-
+### Option 2 (easier): Running dbghaplo with reads 
 ```sh
 run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa -o pipeline_output
 
@@ -74,7 +72,8 @@ ls pipeline_output/pipeline_files
 >  If you **did not** install via conda, do the following instead. 
 >```sh
 >mamba install -c bioconda tabix samtools lofreq minimap2
->dbghaplo/scripts/run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa -o pipeline_output
+>git clone https://github.com/bluenote-1577/dbghaplo
+>./dbghaplo/scripts/run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa -o pipeline_output
 >```
 
 ## Manuals, tutorials, and cookbook
