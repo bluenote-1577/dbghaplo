@@ -61,7 +61,9 @@ ls dbghaplo_output
 ```
 ### Option 2 (easier): Running dbghaplo with reads 
 ```sh
-run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa -o pipeline_output
+git clone https://github.com/bluenote-1577/dbghaplo
+cd dbghaplo
+run_dbghaplo_pipeline -i hiv_test/3000_95_3.fastq.gz  -r hiv_test/OR483991.1.fasta --overwrite -o pipeline_output/ 
 
 # results folder
 ls pipeline_output
