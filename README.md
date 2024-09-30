@@ -38,10 +38,20 @@ Similar tools exist for detection of similar haplotypes in mixtures. dbghaplo wa
 
 ## Install
 
-See the [installation instructions on the wiki](https://github.com/bluenote-1577/dbghaplo/wiki/Installation).
+```sh
+mamba install -c bioconda dbghaplo
+```
+
+See the [installation instructions on the wiki](https://github.com/bluenote-1577/dbghaplo/wiki/Installation) if you want to compile directly or want a static binary.
 
 ## Quick Start after install 
 
 ```sh
 
+
+### running dbghaplo from BAM + VCF 
+dbghaplo -b sorted_indexed.bam -v snps.vcf.gz -r reference.fa
+
+### running dbghaplo pipeline from reads directly (requires samtools, lofreq, and bcftools)
+run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa
 ```
