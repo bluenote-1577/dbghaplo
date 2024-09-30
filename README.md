@@ -43,7 +43,7 @@ mamba install -c bioconda dbghaplo
 dbghaplo -h 
 ```
 
-See the [installation instructions on the wiki](https://github.com/bluenote-1577/dbghaplo/wiki/Installation) if you want to compile directly or want a static binary.
+See the [installation instructions on the wiki](https://github.com/bluenote-1577/dbghaplo/wiki/Installation) if you want to compile directly or want a static binary. This is necessary if you're not on x86 architectures.
 
 ## Quick Start after install 
 
