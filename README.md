@@ -58,25 +58,24 @@ ls dbghaplo_output
 
 ### Pipeline usage (reads -> haplotypes)
 
-We provide a pipeline for going from reads -> haplotypes directly without BAM and VCF generation. This uses lofreq and minimap2 for SNP calling and alignment. 
-
-#### If you installed from conda
+We provide a pipeline for going from reads -> haplotypes directly. This uses lofreq and minimap2 for SNP calling and alignment. 
 
 ```sh
-run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa
+run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa -o pipeline_output
+
+# same results are available
+ls pipeline_output
+
+# intermediate files (bam + vcf files)
+ls pipeline_output/pipeline_files
 ```
 
-#### If you compiled dbghaplo or are using a static binary
-
-```sh
-# mamba install -c bioconda tabix samtools lofreq minimap2
-samtools -h
-lofreq -h
-minimap2 -h 
-tabix -h 
-
-dbghaplo/scripts/run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa -o pipeline_output
-```
+> [!NOTE]
+>  If you **did not** install via conda, do the following instead. 
+>```sh
+>mamba install -c bioconda tabix samtools lofreq minimap2
+>dbghaplo/scripts/run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa -o pipeline_output
+>```
 
 ## Manuals, tutorials, and cookbook
 
@@ -88,6 +87,10 @@ dbghaplo/scripts/run_dbghaplo_pipeline -i reads.fq.gz -r reference.fa -o pipelin
 ### Tutorials
 
 * [Tutorial 1 - getting started](https://github.com/bluenote-1577/dbghaplo/wiki/Tutorial-1:-getting-started-with-dbghaplo)
+
+## Citation
+
+Forthcoming.
 
 ## Citation 
 
